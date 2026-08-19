@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>จับคู่เครื่องดนตรี — หัวห้อง</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="dvd-layer" class="dvd-layer"></div>
+<div id="freeze-overlay" class="freeze-overlay hidden"></div>
+<div id="confetti-layer" class="confetti-layer"></div>
+<div id="toast" class="toast"></div>
+
+<!-- ============ 1. CREATE ROOM ============ -->
+<section id="screen-setup" class="screen">
+  <div class="brand">จับคู่เครื่องดนตรี — หัวห้อง</div>
+  <div class="glass-card">
+    <h1 class="title-xl">ตั้งค่าห้องเกม</h1>
+
+    <div>
+      <label class="field-label">จำนวนทีม</label>
+      <div class="select-row">
+        <select id="set-numTeams">
+          <option value="2">2 ทีม</option>
+          <option value="3">3 ทีม</option>
+          <option value="4" selected>4 ทีม</option>
+          <option value="5">5 ทีม</option>
+          <option value="6">6 ทีม</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="field-label">จำนวนคนสูงสุดต่อทีม</label>
+      <div class="select-row">
+        <select id="set-maxPerTeam">
+          <option value="3">3 คน</option>
+          <option value="4" selected>4 คน</option>
+          <option value="5">5 คน</option>
+          <option value="6">6 คน</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="field-label">เวลาต่อเกม</label>
+      <div class="select-row">
+        <select id="set-gameTime">
+          <option value="5" selected>5 นาที</option>
+          <option value="7">7 นาที</option>
+          <option value="10">10 นาที</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="field-label">ระดับความยาก (จำนวนคู่ไพ่)</label>
+      <div class="select-row">
+        <select id="set-pairCount">
+          <option value="6" selected>6 คู่ (ง่าย)</option>
+          <option value="8">8 คู่</option>
+          <option value="10">10 คู่</option>
+          <option value="12">12 คู่ (ยาก)</option>
+        </select>
+      </div>
+    </div>
+
+    <button id="btn-create" class="btn btn-primary btn-block">สร้างห้อง</button>
+  </div>
+</section>
+
+<!-- ============ 2. LOBBY ============ -->
+<section id="screen-lobby" class="screen hidden">
+  <button class="back-btn"></button>
+  <div class="glass-card xwide">
+    <div class="pin-display">
+      <div class="pin-label">รหัส PIN เข้าห้อง</div>
+      <div class="pin-value" id="lobby-pin">------</div>
+      <p class="small-note">ให้นักเรียนเข้า URL ของหน้าเว็บผู้เล่น แล้วใส่รหัสนี้</p>
+    </div>
+    <div id="roster-grid" class="roster-grid"></div>
+    <div class="row" style="justify-content:center; margin-top:8px;">
+      <button id="btn-start" class="btn btn-primary" style="min-width:220px;">เริ่มเกม</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. HOST GAME (spectator dashboard) ============ -->
+<section id="screen-hostgame" class="screen hidden">
+  <button class="back-btn"></button>
+  <div class="game-shell">
+    <div class="hud">
+      <div class="team-name">แดชบอร์ดหัวห้อง</div>
+      <div class="timer" id="host-timer">05:00</div>
+    </div>
+    <div id="item-activity" class="item-activity hidden"></div>
+    <div id="host-team-grid" class="roster-grid"></div>
+  </div>
+</section>
+
+<!-- ============ 4. RESULTS ============ -->
+<section id="screen-hostresults" class="screen hidden">
+  <button class="back-btn"></button>
+  <div class="glass-card wide">
+    <div id="winner-banner" class="winner-banner hidden"></div>
+    <h1 class="title-xl">สรุปผล</h1>
+    <div id="host-result-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+    <button id="btn-new-room" class="btn btn-secondary btn-block">สร้างห้องใหม่ / ออกจากห้อง</button>
+  </div>
+</section>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="icons.js"></script>
+<script src="faces.js"></script>
+<script src="sound.js"></script>
+<script src="host.js"></script>
+</body>
+</html>
