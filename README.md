@@ -62,6 +62,7 @@ the top of `public/faces.js` (`FACE_FILES`) if you want to rename or add more.
 | `host:startGame` | client→server | Locks the room and starts the shared countdown |
 | `client:joinRoom` | client→server | Student validates a PIN |
 | `client:setName` / `client:chooseTeam` / `client:chooseRole` | client→server | Onboarding steps |
+| `client:renameTeam` | client→server | Any teammate can rename their team while still in the lobby |
 | `lobby:update` | server→room | Live roster, grouped by team, pushed on every join/role change |
 | `client:flipCard` | client→server | Only the **opener** may call this |
 | `game:boardUpdate` | server→room | New card revealed (still pending vote) |

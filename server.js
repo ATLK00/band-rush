@@ -113,6 +113,29 @@ function sanitizeName(name) {
     .replace(/[<>]/g, "");
 }
 
+function sanitizeTeamName(name) {
+  return String(name || "")
+    .trim()
+    .slice(0, 24)
+    .replace(/[<>]/g, "");
+}
+
+/** Removes a socket's player entry from whatever team it currently sits in
+ *  (if any) and clears the socket's team-room membership. Used both by the
+ *  disconnect grace-period cleanup and by "change team", so a player can
+ *  never end up counted on two teams at once. */
+function removePlayerFromCurrentTeam(room, socket) {
+  const oldTeamId = socket.data.teamId;
+  if (!oldTeamId) return;
+  const oldTeam = findTeam(room, oldTeamId);
+  socket.leave(`${room.pin}:${oldTeamId}`);
+  socket.data.teamId = null;
+  if (!oldTeam) return;
+  const player = oldTeam.players.find((p) => p.id === socket.id);
+  if (player) clearPlayerDisconnectTimer(player);
+  oldTeam.players = oldTeam.players.filter((p) => p.id !== socket.id);
+}
+
 function findTeam(room, teamId) {
   return room.teams.find((t) => t.id === teamId);
 }
@@ -501,11 +524,21 @@ io.on("connection", (socket) => {
   socket.on("client:chooseTeam", ({ teamId } = {}, cb) => {
     const room = rooms.get(socket.data.pin);
     if (!room) return cb && cb({ ok: false, error: "ไม่พบห้อง" });
+    if (room.status !== "lobby") {
+      return cb && cb({ ok: false, error: "เกมเริ่มไปแล้ว เปลี่ยนทีมไม่ได้" });
+    }
     const team = findTeam(room, teamId);
     if (!team) return cb && cb({ ok: false, error: "ไม่พบทีมนี้" });
-    if (team.players.length >= room.settings.maxPerTeam) {
+    const isSameTeam = socket.data.teamId === teamId;
+    if (!isSameTeam && team.players.length >= room.settings.maxPerTeam) {
       return cb && cb({ ok: false, error: "ทีมนี้เต็มแล้ว" });
     }
+
+    // Always leave whatever team we're currently in before joining the new
+    // one — covers both the first-time join and the "change team" flow,
+    // and guarantees a player is never counted on two teams at once.
+    removePlayerFromCurrentTeam(room, socket);
+
     socket.data.teamId = teamId;
     const newPlayer = {
       id: socket.id,
@@ -542,6 +575,9 @@ io.on("connection", (socket) => {
   socket.on("client:chooseRole", ({ role } = {}, cb) => {
     const room = rooms.get(socket.data.pin);
     if (!room) return cb && cb({ ok: false, error: "ไม่พบห้อง" });
+    if (room.status !== "lobby") {
+      return cb && cb({ ok: false, error: "เกมเริ่มไปแล้ว เปลี่ยนบทบาทไม่ได้" });
+    }
     const team = findTeam(room, socket.data.teamId);
     if (!team) return cb && cb({ ok: false, error: "ไม่พบทีม" });
     const player = team.players.find((p) => p.id === socket.id);
@@ -564,6 +600,21 @@ io.on("connection", (socket) => {
 
     player.role = finalRole;
     cb && cb({ ok: true, role: finalRole });
+    emitLobbyUpdate(socket.data.pin);
+  });
+
+  socket.on("client:renameTeam", ({ name } = {}, cb) => {
+    const room = rooms.get(socket.data.pin);
+    if (!room) return cb && cb({ ok: false, error: "ไม่พบห้อง" });
+    if (room.status !== "lobby") {
+      return cb && cb({ ok: false, error: "เกมเริ่มไปแล้ว เปลี่ยนชื่อทีมไม่ได้" });
+    }
+    const team = findTeam(room, socket.data.teamId);
+    if (!team) return cb && cb({ ok: false, error: "คุณยังไม่ได้อยู่ทีมไหน" });
+    const clean = sanitizeTeamName(name);
+    if (!clean) return cb && cb({ ok: false, error: "กรุณาใส่ชื่อทีม" });
+    team.name = clean;
+    cb && cb({ ok: true, name: clean });
     emitLobbyUpdate(socket.data.pin);
   });
 

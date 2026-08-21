@@ -61,6 +61,9 @@ const screens = [
 function showScreen(id) {
   screens.forEach((s) => document.getElementById(s).classList.toggle("hidden", s !== id));
 }
+function currentScreenId() {
+  return screens.find((s) => !document.getElementById(s).classList.contains("hidden"));
+}
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -71,16 +74,97 @@ function toast(msg) {
 function leaveSession() {
   sessionStorage.removeItem("mmg_pin");
 }
+function confirmLeave() {
+  if (!confirm("ต้องการออกจากห้องใช่หรือไม่? คุณจะต้องใส่รหัส PIN ใหม่อีกครั้ง")) return;
+  leaveSession();
+  window.location.reload();
+}
+function goToTeamScreen() {
+  renderTeamGrid();
+  showScreen("screen-team");
+}
+function syncRoleSelectionUI() {
+  document.querySelectorAll("#screen-role .choice-card").forEach((b) => {
+    b.classList.toggle("selected", b.dataset.role === state.role);
+  });
+}
+function updateWaitingSummary() {
+  const el = document.getElementById("waiting-summary");
+  if (state.role === "solo") {
+    el.textContent = `ทีม: ${state.teamName} · คุณเล่นคนเดียว (ทำหน้าที่ครบทุกบทบาท)`;
+  } else if (state.role) {
+    el.textContent = `ทีม: ${state.teamName} · บทบาท: ${roleLabel(state.role)}`;
+  } else {
+    el.textContent = `ทีม: ${state.teamName}`;
+  }
+  const renameInput = document.getElementById("input-team-rename");
+  if (renameInput && document.activeElement !== renameInput) {
+    renameInput.value = state.teamName || "";
+  }
+  const changeRoleBtn = document.getElementById("btn-change-role");
+  if (changeRoleBtn) changeRoleBtn.classList.toggle("hidden", state.role === "solo");
+}
+
+// A team's own back-btn behaves differently per screen: early screens (no
+// team commitment yet) just leave the room; the role screen steps back to
+// team selection instead of leaving entirely, since "change team" is the
+// same flow. Waiting/game/results always confirm before leaving.
+function handleBackClick() {
+  if (currentScreenId() === "screen-role") {
+    goToTeamScreen();
+  } else {
+    confirmLeave();
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initDvdLayer();
-  document.querySelectorAll(".back-btn").forEach((b) =>
-    b.addEventListener("click", () => {
-      leaveSession();
-      window.location.reload();
-    })
-  );
+  document.querySelectorAll(".back-btn").forEach((b) => b.addEventListener("click", handleBackClick));
+  document.getElementById("btn-leave-room").addEventListener("click", confirmLeave);
+  document.getElementById("btn-change-role").addEventListener("click", () => {
+    syncRoleSelectionUI();
+    showScreen("screen-role");
+  });
+  document.getElementById("btn-change-team").addEventListener("click", goToTeamScreen);
+  document.getElementById("btn-team-rename").addEventListener("click", () => {
+    const name = document.getElementById("input-team-rename").value.trim();
+    if (!name) {
+      toast("กรุณาใส่ชื่อทีม");
+      return;
+    }
+    socket.emit("client:renameTeam", { name }, (res) => {
+      if (!res || !res.ok) {
+        toast((res && res.error) || "เปลี่ยนชื่อทีมไม่สำเร็จ");
+        return;
+      }
+      state.teamName = res.name;
+      updateWaitingSummary();
+      toast("บันทึกชื่อทีมแล้ว");
+    });
+  });
   attemptRejoin();
+});
+
+// Keep team rosters/names live while sitting in the lobby, so a reopened
+// "เปลี่ยนทีม" grid shows current headcounts and a renamed team is reflected
+// immediately for everyone on it.
+socket.on("lobby:update", (lobby) => {
+  if (!lobby || !lobby.teams || !state.pin) return;
+  state.teams = lobby.teams.map((t) => ({
+    id: t.id,
+    name: t.name,
+    color: t.color,
+    count: t.players.length,
+    maxPerTeam: t.maxPerTeam,
+  }));
+  if (currentScreenId() === "screen-team") renderTeamGrid();
+  if (state.teamId) {
+    const myTeam = lobby.teams.find((t) => t.id === state.teamId);
+    if (myTeam && myTeam.name !== state.teamName) {
+      state.teamName = myTeam.name;
+      updateWaitingSummary();
+    }
+  }
 });
 
 // ---------------- Reconnect after refresh ----------------
@@ -103,7 +187,7 @@ function attemptRejoin() {
       if (!state.role) {
         showScreen("screen-role");
       } else {
-        document.getElementById("waiting-summary").textContent = `ทีม: ${state.teamName} · บทบาท: ${roleLabel(state.role)}`;
+        updateWaitingSummary();
         showScreen("screen-waiting");
       }
     } else if (res.status === "playing") {
@@ -210,10 +294,12 @@ function chooseTeam(teamId) {
     state.teamColor = res.color;
     if (res.soloMode) {
       state.role = "solo";
-      document.getElementById("waiting-summary").textContent =
-        `ทีม: ${state.teamName} · คุณเล่นคนเดียว (ทำหน้าที่ครบทุกบทบาท)`;
+      updateWaitingSummary();
       showScreen("screen-waiting");
     } else {
+      // Joining/switching to a team always starts with a fresh role pick.
+      state.role = null;
+      syncRoleSelectionUI();
       showScreen("screen-role");
     }
   });
@@ -238,11 +324,8 @@ document.querySelectorAll("#screen-role .choice-card").forEach((btn) => {
       }
       errEl.textContent = "";
       state.role = res.role;
-      document.querySelectorAll("#screen-role .choice-card").forEach((b) => b.classList.remove("selected"));
-      const activeBtn = document.querySelector(`#screen-role .choice-card[data-role="${res.role}"]`);
-      if (activeBtn) activeBtn.classList.add("selected");
-      document.getElementById("waiting-summary").textContent =
-        `ทีม: ${state.teamName} · บทบาท: ${roleLabel(res.role)}`;
+      syncRoleSelectionUI();
+      updateWaitingSummary();
       showScreen("screen-waiting");
     });
   });
@@ -250,7 +333,7 @@ document.querySelectorAll("#screen-role .choice-card").forEach((btn) => {
 
 socket.on("client:forceRoleSelect", () => {
   state.role = null;
-  document.querySelectorAll("#screen-role .choice-card").forEach((b) => b.classList.remove("selected"));
+  syncRoleSelectionUI();
   toast("มีเพื่อนเข้าทีมเพิ่ม กรุณาเลือกบทบาทของคุณอีกครั้ง");
   showScreen("screen-role");
 });
