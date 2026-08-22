@@ -31,6 +31,19 @@ app.use(express.static(path.join(__dirname, "public")));
 // the same entry: one shows the instrument name, the other shows its
 // family/category name (e.g. "กลองชุด" <-> "เครื่องกระทบ"). This teaches
 // instrument-family classification instead of simple picture memory.
+// Single source of truth for every instrument in the game — the client
+// never keeps its own copy of this table; it reads whatever name/category
+// the server attaches to each card (see sanitizeBoard()). To add more
+// instruments, just add rows here:
+//   { id: "some_id", th: "ชื่อไทย", category: "percussion" }
+// - `id` must be unique, lowercase, no spaces — it also doubles as the
+//   image filename the client looks for: public/assets/instruments/<id>.png
+//   (see that folder's README for image specs). No image yet? The game
+//   falls back to a generic placeholder automatically, nothing breaks.
+// - `category` must be one of the 5 keys in CATEGORY_LABEL just below.
+// The board is drawn randomly from however many rows are here, so you can
+// add 5 or 50 — just keep at least as many as the largest "pairCount"
+// option offered in the room setup screen (currently 12).
 const INSTRUMENTS = [
   { id: "drum_kit", th: "กลองชุด", category: "percussion" },
   { id: "maracas", th: "มาราคัส", category: "percussion" },
@@ -53,7 +66,7 @@ const CATEGORY_LABEL = {
   strings: "เครื่องสาย",
   brass: "เครื่องเป่าลมทองเหลือง",
   woodwind: "เครื่องเป่าลมไม้",
-  keyboard: "เครื่องคีย์บอร์ด",
+  keyboard: "เครื่องลิ่มนิ้ว",
 };
 
 const TEAM_COLORS = [
@@ -62,7 +75,7 @@ const TEAM_COLORS = [
 ];
 
 const ITEM_COOLDOWN_MS = 5000; // short anti-double-click cooldown
-const FREEZE_DURATION_MS = 3000;
+const FREEZE_DURATION_MS = 5000;
 const PEEK_DURATION_MS = 3000;
 const WRONG_MATCH_LOCK_MS = 2500; // penalty: opener can't flip right after a wrong guess
 const RECONNECT_GRACE_MS = 45000; // keep a disconnected player's slot this long
@@ -152,11 +165,24 @@ function getVotingConfirmers(team) {
 
 /** Board view that hides the identity of hidden cards from everyone. */
 function sanitizeBoard(team) {
-  return team.board.map((c) => ({
-    state: c.state,
-    instrumentId: c.state === "hidden" ? null : c.instrumentId,
-    kind: c.state === "hidden" ? null : c.kind,
-  }));
+  return team.board.map((c) => {
+    if (c.state === "hidden") {
+      return { state: c.state, instrumentId: null, kind: null, name: null, category: null };
+    }
+    // Send the instrument's Thai name + category alongside its id so the
+    // client never has to keep its own separate copy of the instrument
+    // table in sync — server.js's INSTRUMENTS array (below) is the single
+    // source of truth. Add new instruments there only; nothing else to
+    // touch client-side.
+    const inst = INSTRUMENT_BY_ID[c.instrumentId];
+    return {
+      state: c.state,
+      instrumentId: c.instrumentId,
+      kind: c.kind,
+      name: inst ? inst.th : null,
+      category: inst ? inst.category : null,
+    };
+  });
 }
 
 function publicPlayer(p) {
@@ -164,6 +190,7 @@ function publicPlayer(p) {
 }
 
 function publicTeams(room) {
+  const now = Date.now();
   return room.teams.map((t) => ({
     id: t.id,
     name: t.name,
@@ -176,9 +203,16 @@ function publicTeams(room) {
     tokens: t.tokens,
     pairCount: room.settings.pairCount,
     board: sanitizeBoard(t),
-    frozenUntil: t.frozenUntil,
-    wrongLockUntil: t.wrongLockUntil,
-    itemCooldownUntil: t.itemCooldownUntil,
+    // Sent as "ms remaining right now" — measured against the SERVER's own
+    // clock — rather than an absolute deadline timestamp. A receiving
+    // client only ever has to do `Date.now() + msLeft` against its OWN
+    // clock. Comparing a server-absolute deadline directly against a
+    // client's Date.now() is what used to cause the board staying locked
+    // long after a freeze/penalty had actually expired on any device whose
+    // clock ran behind the server's.
+    frozenMsLeft: Math.max(0, t.frozenUntil - now),
+    wrongLockMsLeft: Math.max(0, t.wrongLockUntil - now),
+    itemCooldownMsLeft: Math.max(0, t.itemCooldownUntil - now),
     finishedAt: t.finishedAt,
   }));
 }
@@ -227,6 +261,7 @@ function createRoom(settings) {
     wrongAttempts: 0,
     itemsUsedCount: 0,
     tokens: 0,
+    matchStreak: 0,
     finishedAt: null,
     frozenUntil: 0,
     wrongLockUntil: 0,
@@ -277,12 +312,18 @@ function resolvePendingFlip(pin, team, confirmed) {
   const c1 = team.board[i1];
   const c2 = team.board[i2];
   let matched = false;
+  let tokensEarned = 0;
 
   if (confirmed && cardsMatch(c1, c2)) {
     c1.state = "matched";
     c2.state = "matched";
     team.matchedPairs += 1;
-    team.tokens += 1; // earn a token for a correct match
+    // Combo: consecutive correct matches (no wrong guess in between) pay
+    // out more tokens each time — 1st match in a streak = 1, 2nd in a row
+    // = 2, 3rd in a row = 3, and so on. A wrong guess resets it below.
+    team.matchStreak = (team.matchStreak || 0) + 1;
+    tokensEarned = team.matchStreak;
+    team.tokens += tokensEarned;
     matched = true;
   } else {
     c1.state = "hidden";
@@ -290,10 +331,12 @@ function resolvePendingFlip(pin, team, confirmed) {
     // Penalty only applies to a genuine wrong guess (confirmed "yes" but
     // the cards didn't actually match). Clicking "ยกเลิก" to reject a
     // clearly-bad pair before committing is the team catching their own
-    // mistake — that should NOT cost them a lockout or count as a miss.
+    // mistake — that should NOT cost them a lockout, count as a miss, or
+    // break their combo streak.
     if (confirmed) {
       team.wrongAttempts += 1;
       team.wrongLockUntil = Date.now() + WRONG_MATCH_LOCK_MS;
+      team.matchStreak = 0;
     }
   }
 
@@ -307,7 +350,11 @@ function resolvePendingFlip(pin, team, confirmed) {
     board: sanitizeBoard(team),
     matchedPairs: team.matchedPairs,
     tokens: team.tokens,
-    wrongLockUntil: team.wrongLockUntil,
+    tokensEarned,
+    comboStreak: team.matchStreak,
+    // Duration, not an absolute deadline — see the note on publicTeams()
+    // above for why. 0 means no penalty was applied this round.
+    wrongLockDurationMs: confirmed && !matched ? WRONG_MATCH_LOCK_MS : 0,
   });
 
   if (team.matchedPairs === room.settings.pairCount && !team.finishedAt) {
@@ -423,7 +470,7 @@ io.on("connection", (socket) => {
         status: room.status,
         lobby: lobbyView(room),
         teams: room.status !== "lobby" ? publicTeams(room) : null,
-        endsAt: room.endsAt,
+        remainingMs: room.endsAt ? Math.max(0, room.endsAt - Date.now()) : null,
         results: room.lastResults,
       });
   });
@@ -648,10 +695,16 @@ io.on("connection", (socket) => {
         io.to(pin).emit("game:voteRequest", {
           teamId: team.id,
           cardIndexes: team.pendingFlip,
-          cards: team.pendingFlip.map((i) => ({
-            instrumentId: team.board[i].instrumentId,
-            kind: team.board[i].kind,
-          })),
+          cards: team.pendingFlip.map((i) => {
+            const c = team.board[i];
+            const inst = INSTRUMENT_BY_ID[c.instrumentId];
+            return {
+              instrumentId: c.instrumentId,
+              kind: c.kind,
+              name: inst ? inst.th : null,
+              category: inst ? inst.category : null,
+            };
+          }),
         });
       }
     }
@@ -720,32 +773,60 @@ io.on("connection", (socket) => {
     team.itemsUsedCount += 1;
 
     if (itemType === "swap") {
-      // IMPORTANT: only swap within the same `kind` (name<->name or
-      // category<->category). Swapping across kinds used to let a "name"
-      // card and a "category" card trade instrumentId — which could leave
-      // two cards showing the exact same instrument name (a visible dupe)
-      // and unbalance how many of each family exist among name-cards vs
-      // category-cards, occasionally making the board unsolvable. A
-      // same-kind swap is a pure permutation, so the set of names on the
-      // board and the set of categories on the board never changes —
-      // it just scrambles which specific card shows which one.
-      const hiddenByKind = { name: [], category: [] };
-      targetTeam.board.forEach((c, i) => {
-        if (c.state === "hidden") hiddenByKind[c.kind].push(i);
-      });
-      const swappableKinds = ["name", "category"].filter((k) => hiddenByKind[k].length >= 2);
-      if (swappableKinds.length > 0) {
-        const kind = swappableKinds[Math.floor(Math.random() * swappableKinds.length)];
-        const [a, b] = shuffle(hiddenByKind[kind]);
-        const tmp = targetTeam.board[a].instrumentId;
-        targetTeam.board[a].instrumentId = targetTeam.board[b].instrumentId;
-        targetTeam.board[b].instrumentId = tmp;
+      if (targetTeam.pendingFlip.length === 2) {
+        // Catch the opponent mid-reveal: snap their currently-open pair
+        // back face-down AND scramble which instrument sits at each of
+        // those two positions, so their glimpse doesn't even help. Their
+        // pending vote is now invalid — game:voteCancelled tells their
+        // confirmer(s) to close the popup instead of it silently hanging.
+        const [i1, i2] = targetTeam.pendingFlip;
+        const c1 = targetTeam.board[i1];
+        const c2 = targetTeam.board[i2];
+        c1.state = "hidden";
+        c2.state = "hidden";
+        const tmp = c1.instrumentId;
+        c1.instrumentId = c2.instrumentId;
+        c2.instrumentId = tmp;
+        targetTeam.pendingFlip = [];
+        targetTeam.votes = {};
+        io.to(pin).emit("game:voteCancelled", { teamId: targetTeam.id });
+        io.to(pin).emit("game:cardsSwapped", {
+          teamId: targetTeam.id,
+          fromTeam: team.id,
+          board: sanitizeBoard(targetTeam),
+          catchType: "interrupted",
+        });
+      } else {
+        // Nothing open to catch — fall back to scrambling two random
+        // hidden cards instead.
+        // IMPORTANT: only swap within the same `kind` (name<->name or
+        // category<->category). Swapping across kinds used to let a "name"
+        // card and a "category" card trade instrumentId — which could leave
+        // two cards showing the exact same instrument name (a visible dupe)
+        // and unbalance how many of each family exist among name-cards vs
+        // category-cards, occasionally making the board unsolvable. A
+        // same-kind swap is a pure permutation, so the set of names on the
+        // board and the set of categories on the board never changes —
+        // it just scrambles which specific card shows which one.
+        const hiddenByKind = { name: [], category: [] };
+        targetTeam.board.forEach((c, i) => {
+          if (c.state === "hidden") hiddenByKind[c.kind].push(i);
+        });
+        const swappableKinds = ["name", "category"].filter((k) => hiddenByKind[k].length >= 2);
+        if (swappableKinds.length > 0) {
+          const kind = swappableKinds[Math.floor(Math.random() * swappableKinds.length)];
+          const [a, b] = shuffle(hiddenByKind[kind]);
+          const tmp = targetTeam.board[a].instrumentId;
+          targetTeam.board[a].instrumentId = targetTeam.board[b].instrumentId;
+          targetTeam.board[b].instrumentId = tmp;
+        }
+        io.to(pin).emit("game:cardsSwapped", {
+          teamId: targetTeam.id,
+          fromTeam: team.id,
+          board: sanitizeBoard(targetTeam),
+          catchType: "scrambled",
+        });
       }
-      io.to(pin).emit("game:cardsSwapped", {
-        teamId: targetTeam.id,
-        fromTeam: team.id,
-        board: sanitizeBoard(targetTeam),
-      });
     } else if (itemType === "freeze") {
       targetTeam.frozenUntil = now + FREEZE_DURATION_MS;
       io.to(pin).emit("game:teamFrozen", {
@@ -765,12 +846,15 @@ io.on("connection", (socket) => {
       if (hiddenIdx.length > 0) {
         const pickIdx = hiddenIdx[Math.floor(Math.random() * hiddenIdx.length)];
         const card = team.board[pickIdx];
+        const inst = INSTRUMENT_BY_ID[card.instrumentId];
         io.to(`${pin}:${team.id}`).emit("game:peek", {
           teamId: team.id,
           durationMs: PEEK_DURATION_MS,
           cardIndex: pickIdx,
           instrumentId: card.instrumentId,
           kind: card.kind,
+          name: inst ? inst.th : null,
+          category: inst ? inst.category : null,
         });
       }
     }
@@ -779,10 +863,10 @@ io.on("connection", (socket) => {
       fromTeam: team.id,
       itemType,
       targetTeamId: targetTeam ? targetTeam.id : team.id,
-      cooldownUntil: team.itemCooldownUntil,
+      cooldownMs: ITEM_COOLDOWN_MS,
       tokens: team.tokens,
     });
-    cb && cb({ ok: true, cooldownUntil: team.itemCooldownUntil, tokens: team.tokens });
+    cb && cb({ ok: true, cooldownMs: ITEM_COOLDOWN_MS, tokens: team.tokens });
   });
 
   socket.on("disconnect", () => {

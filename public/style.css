@@ -436,6 +436,88 @@ label.field-label {
   font-size: 1rem;
 }
 
+#host-team-grid .roster-team {
+  position: relative;
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+
+#host-team-grid .roster-team h4 {
+  display: flex;
+  align-items: center;
+}
+
+.dash-rank {
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 800;
+  background: #e7ebf5;
+  color: var(--ink-dark-soft);
+}
+
+.dash-rank.rank-1 {
+  background: linear-gradient(135deg, #ffd76b, #ffb400);
+  color: white;
+  box-shadow: 0 4px 10px rgba(255, 180, 0, 0.4);
+}
+
+.dash-rank.rank-2 {
+  background: linear-gradient(135deg, #d9dee8, #aab2c2);
+  color: white;
+}
+
+.dash-rank.rank-3 {
+  background: linear-gradient(135deg, #e3ad84, #c17f4d);
+  color: white;
+}
+
+/* Leader gets a standing gold glow so the room can tell who's ahead at a
+   glance without reading numbers. */
+#host-team-grid .roster-team.dash-leader {
+  box-shadow: 0 0 0 2px rgba(255, 180, 0, 0.5), 0 0 28px rgba(255, 180, 0, 0.35), var(--shadow-soft);
+}
+
+/* Fires once, briefly, the instant a team's rank improves — a quick
+   "pop" so an overtake actually reads as a moment, not just a number
+   quietly changing. */
+@keyframes dash-overtake {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.035);
+    box-shadow: 0 0 0 3px rgba(78, 230, 176, 0.55), 0 14px 30px rgba(78, 230, 176, 0.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+#host-team-grid .roster-team.dash-overtake {
+  animation: dash-overtake 0.7s ease;
+}
+
+/* When 1st and 2nd place are within a single pair of each other, pulse
+   both leading cards so the room feels the race is close. */
+@keyframes dash-close-race {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(255, 93, 143, 0.35), var(--shadow-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 93, 143, 0.65), 0 0 24px rgba(255, 93, 143, 0.4);
+  }
+}
+
+#host-team-grid .roster-team.dash-close-race {
+  animation: dash-close-race 1.1s ease-in-out infinite;
+}
+
 /* ---------------- Waiting screen ---------------- */
 
 .waiting-pulse {
@@ -488,6 +570,68 @@ label.field-label {
   font-size: 1.2rem;
   color: var(--accent-dark);
   font-variant-numeric: tabular-nums;
+}
+
+.token-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(180deg, #ffe19a, var(--accent) 60%, var(--accent-dark));
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  padding: 5px 12px 5px 8px;
+  font-weight: 800;
+  font-size: 1rem;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(140, 70, 0, 0.4);
+  box-shadow: 0 3px 0 #c4670b, 0 6px 14px rgba(239, 127, 14, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.token-badge.bump {
+  animation: token-bump 0.35s ease;
+}
+
+@keyframes token-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.token-pop {
+  position: absolute;
+  top: -6px;
+  right: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--mint);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.token-pop.show {
+  animation: token-float-up 0.9s ease forwards;
+}
+
+@keyframes token-float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
 }
 
 .hud .progress {
@@ -583,10 +727,22 @@ label.field-label {
   max-width: 34px;
 }
 
+.card-front .icon-wrap.photo {
+  width: 60%;
+  max-width: 62px;
+}
+
 .card-front .icon-wrap svg {
   width: 100%;
   height: auto;
   display: block;
+}
+
+.card-front .icon-wrap.photo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
 }
 
 .card-front .card-text {
@@ -682,10 +838,11 @@ label.field-label {
 }
 
 .vote-pair .mini-icon {
-  width: 28px;
+  width: 34px;
 }
 
-.vote-pair .mini-icon svg {
+.vote-pair .mini-icon svg,
+.vote-pair .mini-icon img {
   width: 100%;
   height: auto;
   display: block;

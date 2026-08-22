@@ -18,7 +18,7 @@
 const socket = io();
 
 const ITEM_COSTS = { swap: 1, freeze: 2, peek: 1 };
-const ITEM_LABELS = { swap: "สลับตำแหน่งไพ่", freeze: "แช่แข็ง 3 วิ", peek: "ส่องไพ่ 3 วิ" };
+const ITEM_LABELS = { swap: "สลับตำแหน่งไพ่", freeze: "แช่แข็ง 5 วิ", peek: "ส่องไพ่ 3 วิ" };
 
 function getOrCreatePlayerId() {
   let id = sessionStorage.getItem("mmg_playerId");
@@ -50,6 +50,7 @@ function isBoardLocked() {
 
 // ---------------- Screen helpers ----------------
 const screens = [
+  "screen-loading",
   "screen-join",
   "screen-name",
   "screen-team",
@@ -117,6 +118,31 @@ function handleBackClick() {
   }
 }
 
+// ---------------- Lock watchdog ----------------
+// Freeze/penalty locks are timed on OUR OWN clock (see the note on
+// publicTeams() server-side for why), but relying on a single setTimeout
+// to flip the board back to "unlocked" is fragile on mobile: browsers
+// throttle or fully suspend timers while a tab is backgrounded — e.g. the
+// screen locks mid-freeze — which can leave the board LOOKING stuck long
+// after the lock actually expired. This watchdog re-checks the real lock
+// state on a short interval and self-corrects the instant it's stale, so
+// a delayed/dropped timer can never leave a team stuck looking frozen.
+let lastLockedRender = false;
+setInterval(() => {
+  if (currentScreenId() !== "screen-game") return;
+  const locked = isBoardLocked();
+  if (locked !== lastLockedRender) {
+    lastLockedRender = locked;
+    renderBoard();
+  }
+}, 400);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && currentScreenId() === "screen-game") {
+    lastLockedRender = isBoardLocked();
+    renderBoard();
+  }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   initDvdLayer();
   document.querySelectorAll(".back-btn").forEach((b) => b.addEventListener("click", handleBackClick));
@@ -142,7 +168,38 @@ document.addEventListener("DOMContentLoaded", () => {
       toast("บันทึกชื่อทีมแล้ว");
     });
   });
-  attemptRejoin();
+
+  // Slow-network reassurance: if we're still on the loading screen after a
+  // few seconds, say so instead of leaving a silent spinner that looks dead.
+  setTimeout(() => {
+    if (currentScreenId() === "screen-loading") {
+      document.getElementById("loading-status").textContent = "เชื่อมต่อช้ากว่าปกติ กำลังลองใหม่...";
+    }
+  }, 6000);
+});
+
+socket.on("connect_error", () => {
+  if (currentScreenId() === "screen-loading") {
+    document.getElementById("loading-status").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กำลังลองใหม่...";
+  }
+});
+
+let hasBooted = false;
+socket.on("connect", () => {
+  if (!hasBooted) {
+    hasBooted = true;
+    // Sensible default first; attemptRejoin() below overrides it if a
+    // saved session restores the player straight back into their room.
+    showScreen("screen-join");
+    attemptRejoin();
+  } else {
+    // A dropped-then-restored connection is a brand new socket as far as
+    // the server is concerned, so it needs to re-attach to the room/team
+    // the same way a page refresh does — just without yanking the person
+    // back to a loading screen for a reconnect that happens mid-session.
+    attemptRejoin();
+    toast("เชื่อมต่อใหม่แล้ว");
+  }
 });
 
 // Keep team rosters/names live while sitting in the lobby, so a reopened
@@ -196,8 +253,13 @@ function attemptRejoin() {
         state.pairCount = myTeam.pairCount;
         state.board = myTeam.board;
         state.tokens = myTeam.tokens || 0;
-        state.frozenUntil = myTeam.frozenUntil || 0;
-        state.wrongLockUntil = myTeam.wrongLockUntil || 0;
+        // Server sends "ms remaining as of the server's clock" — never an
+        // absolute deadline — precisely so we only ever add it to OUR OWN
+        // Date.now() here. Comparing a server-absolute timestamp straight
+        // against a client's clock is what used to leave the board looking
+        // frozen long after the real freeze/penalty had actually ended.
+        state.frozenUntil = myTeam.frozenMsLeft ? Date.now() + myTeam.frozenMsLeft : 0;
+        state.wrongLockUntil = myTeam.wrongLockMsLeft ? Date.now() + myTeam.wrongLockMsLeft : 0;
       }
       document.getElementById("hud-team-dot").style.background = state.teamColor;
       document.getElementById("hud-team-name").textContent = state.teamName;
@@ -206,6 +268,7 @@ function attemptRejoin() {
       document.getElementById("item-panel").classList.toggle("hidden", !canUseItem);
       setupItemButtons();
       if (canUseItem) renderTargetChips();
+      lastLockedRender = isBoardLocked();
       renderBoard();
       updateProgress();
       updateTokenUI();
@@ -366,26 +429,36 @@ socket.on("game:started", ({ endsAt, teams }) => {
 });
 
 // ---------------- Board rendering ----------------
+// Instrument art lives entirely in /public/assets/instruments/<id>.png —
+// see that folder's README. This builds an <img> with a two-step fallback
+// (specific photo -> generic placeholder -> nothing) so a missing file for
+// a newly-added instrument never shows a broken-image icon mid-game.
+function instrumentImgHtml(instrumentId) {
+  const src = `assets/instruments/${instrumentId}.png`;
+  const fallback = `assets/instruments/_placeholder.png`;
+  return `<img class="instrument-img" src="${src}" alt="" loading="lazy"
+    onerror="this.onerror=null;this.src='${fallback}';" />`;
+}
+
 function cardContent(card) {
-  const inst = INSTRUMENTS_BY_ID[card.instrumentId];
-  if (!inst) {
+  if (!card.instrumentId) {
     // Defensive fallback: should never happen, but if a card ever arrives
     // with an unrecognized/missing instrumentId, show a visible marker
     // instead of a blank face so it's obvious something needs a refresh.
-    return { text: "ไม่ทราบ", sub: "-", color: "#999", icon: iconHtml("card", "#999") };
+    return { text: "ไม่ทราบ", sub: "-", color: "#999", icon: iconHtml("card", "#999"), photo: false };
   }
-  const meta = CATEGORY_META[inst.category];
+  const meta = CATEGORY_META[card.category] || { label: card.category || "-", color: "#999" };
   if (card.kind === "category") {
-    return { text: meta.label, sub: "ประเภท", color: meta.color, icon: categoryIconHtml(inst.category) };
+    return { text: meta.label, sub: "ประเภท", color: meta.color, icon: categoryIconHtml(card.category), photo: false };
   }
-  return { text: inst.th, sub: "ชื่อเครื่องดนตรี", color: meta.color, icon: categoryIconHtml(inst.category) };
+  return { text: card.name || "-", sub: "ชื่อเครื่องดนตรี", color: meta.color, icon: instrumentImgHtml(card.instrumentId), photo: true };
 }
 
 function buildCardFace(card) {
   let frontHtml = "";
   if (card.state !== "hidden") {
     const c = cardContent(card);
-    frontHtml = `<div class="icon-wrap" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+    frontHtml = `<div class="icon-wrap${c.photo ? " photo" : ""}" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
   }
   return frontHtml;
 }
@@ -460,43 +533,56 @@ socket.on("game:boardUpdate", ({ teamId, board }) => {
   renderBoard();
 });
 
-socket.on("game:cardsResolved", ({ teamId, matched, confirmed, board, matchedPairs, tokens, wrongLockUntil }) => {
+socket.on("game:cardsResolved", ({ teamId, matched, confirmed, board, matchedPairs, tokens, tokensEarned, comboStreak, wrongLockDurationMs }) => {
   if (teamId !== state.teamId) return;
   state.board = board;
   if (typeof tokens === "number") {
     state.tokens = tokens;
-    updateTokenUI();
+    updateTokenUI(tokensEarned > 0 ? tokensEarned : 0);
   }
   matched ? SFX.match() : SFX.wrong();
   document.getElementById("hud-progress").textContent = `คู่ที่จับได้ ${matchedPairs}/${state.pairCount}`;
   closeVoteOverlay();
 
+  if (matched && comboStreak >= 2) {
+    toast(`คอมโบ x${comboStreak}! ได้ ${tokensEarned} โทเค็น 🔥`);
+  }
   // Penalty only applies to a genuine wrong guess (confirmed "yes" but the
   // pair didn't actually match) — clicking "ยกเลิก" to catch a bad flip
-  // before committing costs nothing.
-  if (!matched && confirmed) {
-    state.wrongLockUntil = wrongLockUntil || Date.now();
-    const remain = state.wrongLockUntil - Date.now();
-    if (remain > 0) {
-      toast(`เปิดไพ่ผิด! รอ ${Math.ceil(remain / 1000)} วิ`);
-      renderBoard();
-      setTimeout(renderBoard, remain + 60);
-      return;
-    }
+  // before committing costs nothing. wrongLockDurationMs is a plain
+  // duration from the server, so the deadline below is computed entirely
+  // against our own clock — no absolute server timestamp involved.
+  if (!matched && confirmed && wrongLockDurationMs > 0) {
+    state.wrongLockUntil = Date.now() + wrongLockDurationMs;
+    toast(`เปิดไพ่ผิด! รอ ${Math.ceil(wrongLockDurationMs / 1000)} วิ`);
+    lastLockedRender = true;
+    renderBoard();
+    return;
   } else if (!matched && !confirmed) {
     toast("ยกเลิกแล้ว ไม่มีบทลงโทษ");
   }
   renderBoard();
 });
 
-socket.on("game:cardsSwapped", ({ teamId, board, fromTeam }) => {
+socket.on("game:cardsSwapped", ({ teamId, board, fromTeam, catchType }) => {
   if (teamId !== state.teamId) return;
   if (board) {
     state.board = board;
+    lastLockedRender = isBoardLocked();
     renderBoard();
   }
   const fromT = state.teams.find((t) => t.id === fromTeam);
-  toast(`${fromT ? fromT.name : "ทีมอื่น"} สลับตำแหน่งไพ่ของทีมคุณ!`);
+  const name = fromT ? fromT.name : "ทีมอื่น";
+  if (catchType === "interrupted") {
+    toast(`${name} จับได้ตอนคุณเปิดไพ่! ไพ่ถูกปิดและสลับ 😱`);
+  } else {
+    toast(`${name} สลับตำแหน่งไพ่ของทีมคุณ!`);
+  }
+});
+
+socket.on("game:voteCancelled", ({ teamId }) => {
+  if (teamId !== state.teamId) return;
+  closeVoteOverlay();
 });
 
 function updateProgress() {
@@ -504,9 +590,26 @@ function updateProgress() {
   document.getElementById("hud-progress").textContent = `คู่ที่จับได้ ${myTeam ? myTeam.matchedPairs : 0}/${state.pairCount}`;
 }
 
-function updateTokenUI() {
+function updateTokenUI(earned) {
   const el = document.getElementById("token-count");
   if (el) el.textContent = state.tokens;
+  if (earned > 0) {
+    const badge = document.getElementById("token-badge");
+    const pop = document.getElementById("token-pop");
+    if (badge) {
+      badge.classList.remove("bump");
+      // Force reflow so re-adding the class restarts the animation even
+      // if tokens are earned twice in quick succession.
+      void badge.offsetWidth;
+      badge.classList.add("bump");
+    }
+    if (pop) {
+      pop.textContent = `+${earned}`;
+      pop.classList.remove("show");
+      void pop.offsetWidth;
+      pop.classList.add("show");
+    }
+  }
   refreshItemButtonAvailability();
 }
 
@@ -520,7 +623,7 @@ socket.on("game:voteRequest", ({ teamId, cards }) => {
   const pairEl = document.getElementById("vote-pair");
   pairEl.innerHTML = cards
     .map((c) => {
-      const info = cardContent({ instrumentId: c.instrumentId, kind: c.kind, state: "revealed" });
+      const info = cardContent({ instrumentId: c.instrumentId, kind: c.kind, name: c.name, category: c.category });
       return `<div class="mini-card" style="color:${info.color}"><div class="mini-icon">${info.icon}</div><div class="mini-text">${info.text}</div></div>`;
     })
     .join("");
@@ -599,7 +702,7 @@ function useItem(itemType) {
       state.tokens = res.tokens;
       updateTokenUI();
     }
-    startCooldownUI(res.cooldownUntil);
+    startCooldownUI(Date.now() + (res.cooldownMs || 0));
   });
 }
 document.getElementById("btn-item-swap").addEventListener("click", () => useItem("swap"));
@@ -652,7 +755,7 @@ socket.on("game:itemUsed", ({ fromTeam, itemType, targetTeamId }) => {
 });
 
 // ---------------- Peek (self item — reveals exactly ONE hidden card) ----------------
-socket.on("game:peek", ({ teamId, cardIndex, instrumentId, kind, durationMs }) => {
+socket.on("game:peek", ({ teamId, cardIndex, instrumentId, kind, name, category, durationMs }) => {
   if (teamId !== state.teamId) return;
   toast("ส่องไพ่! จำตำแหน่งไว้ให้ดี");
   SFX.item();
@@ -661,20 +764,23 @@ socket.on("game:peek", ({ teamId, cardIndex, instrumentId, kind, durationMs }) =
   const realCard = state.board[cardIndex];
   if (!el || !realCard || realCard.state !== "hidden") return;
   el.classList.add("flipped", "peek");
-  const c = cardContent({ instrumentId, kind });
-  el.querySelector(".card-front").innerHTML = `<div class="icon-wrap" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+  const c = cardContent({ instrumentId, kind, name, category });
+  el.querySelector(".card-front").innerHTML = `<div class="icon-wrap${c.photo ? " photo" : ""}" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
   setTimeout(renderBoard, durationMs);
 });
 
 // ---------------- Freeze effect ----------------
-socket.on("game:teamFrozen", ({ teamId, until, durationMs, fromTeam }) => {
+socket.on("game:teamFrozen", ({ teamId, durationMs, fromTeam }) => {
   if (teamId !== state.teamId) return;
-  state.frozenUntil = until;
+  // Deliberately ignore any absolute "until" timestamp from the server and
+  // compute our own deadline from the duration + our own clock — see the
+  // note on publicTeams() server-side for why this matters.
+  state.frozenUntil = Date.now() + durationMs;
   SFX.freeze();
   const fromT = state.teams.find((t) => t.id === fromTeam);
   playFreezeEffect(durationMs, `ถูกแช่แข็งโดย ${fromT ? fromT.name : "ทีมอื่น"}! รอสักครู่...`);
+  lastLockedRender = true;
   renderBoard();
-  setTimeout(renderBoard, durationMs + 60);
 });
 
 // ---------------- Timer ----------------
@@ -728,20 +834,3 @@ socket.on("client:kicked", () => {
   setTimeout(() => window.location.reload(), 1500);
 });
 
-// ---------------- Instrument lookup (mirrors server.js INSTRUMENTS) ----------------
-const INSTRUMENTS_BY_ID = {
-  drum_kit: { th: "กลองชุด", category: "percussion" },
-  maracas: { th: "มาราคัส", category: "percussion" },
-  xylophone: { th: "ระนาดเอก", category: "percussion" },
-  cymbal: { th: "ฉาบ", category: "percussion" },
-  guitar: { th: "กีตาร์", category: "strings" },
-  violin: { th: "ไวโอลิน", category: "strings" },
-  harp: { th: "ฮาร์ป", category: "strings" },
-  cello: { th: "เชลโล", category: "strings" },
-  trumpet: { th: "ทรัมเป็ต", category: "brass" },
-  trombone: { th: "ทรอมโบน", category: "brass" },
-  saxophone: { th: "แซกโซโฟน", category: "woodwind" },
-  flute: { th: "ขลุ่ย", category: "woodwind" },
-  piano: { th: "เปียโน", category: "keyboard" },
-  accordion: { th: "หีบเพลง", category: "keyboard" },
-};

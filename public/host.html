@@ -13,8 +13,17 @@
 <div id="confetti-layer" class="confetti-layer"></div>
 <div id="toast" class="toast"></div>
 
+<!-- ============ 0. LOADING (shown until the socket connects) ============ -->
+<section id="screen-loading" class="screen">
+  <div class="glass-card center-text">
+    <div class="waiting-pulse"></div>
+    <h1 class="title-xl">จับคู่เครื่องดนตรี</h1>
+    <p id="loading-status" class="subtitle">กำลังเชื่อมต่อ...</p>
+  </div>
+</section>
+
 <!-- ============ 1. CREATE ROOM ============ -->
-<section id="screen-setup" class="screen">
+<section id="screen-setup" class="screen hidden">
   <div class="brand">จับคู่เครื่องดนตรี — หัวห้อง</div>
   <div class="glass-card">
     <h1 class="title-xl">ตั้งค่าห้องเกม</h1>

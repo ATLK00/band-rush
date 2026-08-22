@@ -25,7 +25,7 @@ function leaveHostSession() {
   localStorage.removeItem("mmg_hostPin");
 }
 
-const hostScreens = ["screen-setup", "screen-lobby", "screen-hostgame", "screen-hostresults"];
+const hostScreens = ["screen-loading", "screen-setup", "screen-lobby", "screen-hostgame", "screen-hostresults"];
 function showScreen(id) {
   hostScreens.forEach((s) => document.getElementById(s).classList.toggle("hidden", s !== id));
 }
@@ -45,7 +45,31 @@ document.addEventListener("DOMContentLoaded", () => {
       window.location.reload();
     })
   );
-  attemptHostRejoin();
+  setTimeout(() => {
+    if (document.getElementById("screen-loading") && !document.getElementById("screen-loading").classList.contains("hidden")) {
+      document.getElementById("loading-status").textContent = "เชื่อมต่อช้ากว่าปกติ กำลังลองใหม่...";
+    }
+  }, 6000);
+});
+
+let hasBooted = false;
+socket.on("connect", () => {
+  if (!hasBooted) {
+    hasBooted = true;
+    showScreen("screen-setup");
+    attemptHostRejoin();
+  } else {
+    // Re-attach this fresh connection to the room the same way a page
+    // refresh would, without yanking the teacher back to a loading screen
+    // for a reconnect that happens mid-session (e.g. wifi blip).
+    attemptHostRejoin();
+    toast("เชื่อมต่อใหม่แล้ว");
+  }
+});
+socket.on("connect_error", () => {
+  if (document.getElementById("screen-loading") && !document.getElementById("screen-loading").classList.contains("hidden")) {
+    document.getElementById("loading-status").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กำลังลองใหม่...";
+  }
 });
 
 // ---------------- Reconnect after refresh (teacher's own device) ----------------
@@ -66,11 +90,11 @@ function attemptHostRejoin() {
       renderLobby(res.lobby);
       showScreen("screen-lobby");
     } else if (res.status === "playing") {
-      dashboardTeams = res.teams || [];
+      dashboardTeams = normalizeDashTeams(res.teams || []);
       renderDashboard();
       showScreen("screen-hostgame");
-      if (res.endsAt) {
-        const totalSec = Math.max(0, Math.round((res.endsAt - Date.now()) / 1000));
+      if (typeof res.remainingMs === "number") {
+        const totalSec = Math.max(0, Math.round(res.remainingMs / 1000));
         const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
         const s = String(totalSec % 60).padStart(2, "0");
         document.getElementById("host-timer").textContent = `${m}:${s}`;
@@ -146,28 +170,77 @@ document.getElementById("btn-start").addEventListener("click", () => {
 // ---------------- 4. Spectator dashboard ----------------
 let dashboardTeams = [];
 
+// Server sends freeze state as "ms remaining" (its own clock), never an
+// absolute deadline. This converts that into a deadline on the HOST's own
+// clock exactly once on receipt, so the rest of the dashboard code can keep
+// comparing team.frozenUntil against its own Date.now() safely.
+function normalizeDashTeams(teams) {
+  const now = Date.now();
+  return teams.map((t) => ({
+    ...t,
+    frozenUntil: t.frozenMsLeft ? now + t.frozenMsLeft : 0,
+  }));
+}
+
 socket.on("game:started", ({ teams }) => {
-  dashboardTeams = teams;
+  dashboardTeams = normalizeDashTeams(teams);
   renderDashboard();
   showScreen("screen-hostgame");
 });
 
+let previousRanks = {};
+
+function rankTeams(teams) {
+  // Rank by pairs matched (desc), then fewer wrong attempts (asc) as the
+  // tiebreak — matches the same ordering the final results screen uses,
+  // so "who's winning" never flips between the live view and the reveal.
+  return [...teams].sort((a, b) => {
+    if (b.matchedPairs !== a.matchedPairs) return b.matchedPairs - a.matchedPairs;
+    if (a.wrongAttempts !== b.wrongAttempts) return a.wrongAttempts - b.wrongAttempts;
+    return 0;
+  });
+}
+
 function renderDashboard() {
   const grid = document.getElementById("host-team-grid");
   grid.innerHTML = "";
-  dashboardTeams.forEach((t) => {
+  const ranked = rankTeams(dashboardTeams);
+  const anyProgress = ranked.some((t) => t.matchedPairs > 0);
+  const leaderPairs = ranked[0] ? ranked[0].matchedPairs : 0;
+  const secondPairs = ranked[1] ? ranked[1].matchedPairs : -1;
+  const isCloseRace =
+    anyProgress &&
+    ranked.length > 1 &&
+    leaderPairs - secondPairs <= 1 &&
+    !ranked[0].finishedAt &&
+    !ranked[1].finishedAt;
+
+  const nextRanks = {};
+  ranked.forEach((t, i) => {
+    const rank = i + 1;
+    nextRanks[t.id] = rank;
     const box = document.createElement("div");
     box.className = "roster-team";
     box.style.borderTopColor = t.color;
+    if (anyProgress && rank === 1) box.classList.add("dash-leader");
+    if (isCloseRace && (rank === 1 || rank === 2)) box.classList.add("dash-close-race");
+    const prevRank = previousRanks[t.id];
+    if (prevRank !== undefined && rank < prevRank) box.classList.add("dash-overtake");
+
     const pct = Math.round((t.matchedPairs / t.pairCount) * 100);
     const frozen = t.frozenUntil && t.frozenUntil > Date.now();
     box.innerHTML = `
-      <h4><span class="team-dot" style="background:${t.color}"></span>${t.name} ${frozen ? '<span class="frozen-tag">แช่แข็ง</span>' : ""}</h4>
+      <h4>
+        <span class="dash-rank rank-${rank <= 3 ? rank : ""}">${rank}</span>
+        <span class="team-dot" style="background:${t.color}"></span>${t.name}
+        ${frozen ? '<span class="frozen-tag">แช่แข็ง</span>' : ""}
+      </h4>
       <div class="bar-wrap" style="margin-bottom:6px;"><div class="bar" style="width:${pct}%; background:${t.color};"></div></div>
       <p class="small-note">${t.matchedPairs}/${t.pairCount} คู่ · พลาด ${t.wrongAttempts} · ไอเทม ${t.itemsUsedCount} ${t.finishedAt ? "· เสร็จแล้ว" : ""}</p>
     `;
     grid.appendChild(box);
   });
+  previousRanks = nextRanks;
 }
 
 function findDashTeam(id) {
@@ -180,11 +253,11 @@ socket.on("game:cardsResolved", ({ teamId, matchedPairs }) => {
   renderDashboard();
 });
 
-socket.on("game:teamFrozen", ({ teamId, until }) => {
+socket.on("game:teamFrozen", ({ teamId, durationMs }) => {
   const t = findDashTeam(teamId);
-  if (t) t.frozenUntil = until;
+  if (t) t.frozenUntil = Date.now() + durationMs;
   renderDashboard();
-  setTimeout(renderDashboard, (until - Date.now()) + 50);
+  setTimeout(renderDashboard, durationMs + 50);
 });
 
 socket.on("game:cardsSwapped", () => {

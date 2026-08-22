@@ -12,8 +12,17 @@
 <div id="freeze-overlay" class="freeze-overlay hidden"></div>
 <div id="toast" class="toast"></div>
 
+<!-- ============ 0. LOADING (shown until the socket connects) ============ -->
+<section id="screen-loading" class="screen">
+  <div class="glass-card center-text">
+    <div class="waiting-pulse"></div>
+    <h1 class="title-xl">จับคู่เครื่องดนตรี</h1>
+    <p id="loading-status" class="subtitle">กำลังเชื่อมต่อ...</p>
+  </div>
+</section>
+
 <!-- ============ 1. JOIN WITH PIN ============ -->
-<section id="screen-join" class="screen">
+<section id="screen-join" class="screen hidden">
   <div class="brand">จับคู่เครื่องดนตรี</div>
   <div class="glass-card">
     <h1 class="title-xl">ใส่รหัส PIN</h1>
@@ -21,6 +30,7 @@
     <input id="input-pin" class="input pin-input" inputmode="numeric" maxlength="6" placeholder="000000" />
     <button id="btn-join" class="btn btn-primary btn-block">เข้าห้อง</button>
     <p id="join-error" class="small-note" style="color:#e23a5a;"></p>
+    <a href="host.html" class="btn-ghost" style="display:block; text-align:center; margin-top:2px;">เป็นคุณครู? เปิดหน้าหัวห้อง</a>
   </div>
 </section>
 
@@ -98,6 +108,11 @@
   <div class="game-shell">
     <div class="hud">
       <div class="team-name"><span id="hud-team-dot" class="team-dot"></span><span id="hud-team-name"></span></div>
+      <div class="token-badge" id="token-badge">
+        <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#ffe19a"/><circle cx="12" cy="12" r="10" fill="none" stroke="#c4670b" stroke-width="1.5"/><text x="12" y="16.5" text-anchor="middle" font-size="11" font-weight="800" fill="#a8560a">฿</text></svg>
+        <span id="token-count">0</span>
+        <span id="token-pop" class="token-pop"></span>
+      </div>
       <div class="timer" id="hud-timer">05:00</div>
       <div class="progress" id="hud-progress">คู่ที่จับได้ 0/6</div>
     </div>
@@ -108,7 +123,7 @@
 
     <div id="item-panel" class="item-panel hidden">
       <h4>ไอเทม</h4>
-      <p class="small-note">โทเค็นของทีม: <b id="token-count">0</b> (จับคู่ถูก 1 ครั้ง = 1 โทเค็น)</p>
+      <p class="small-note">จับคู่ถูก 1 ครั้ง = 1 โทเค็น (คอมโบต่อเนื่องได้มากกว่า)</p>
       <div class="target-select" id="target-select"></div>
       <div class="item-buttons">
         <button id="btn-item-swap" class="item-btn swap"></button>

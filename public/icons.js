@@ -97,7 +97,7 @@ const CATEGORY_META = {
     </svg>`,
   },
   keyboard: {
-    label: "เครื่องคีย์บอร์ด",
+    label: "เครื่องลิ่มนิ้ว",
     color: "#C780FA",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <rect x="5" y="13" width="38" height="21" rx="2"/>
