@@ -132,12 +132,22 @@
       <p class="small-note">จับคู่ถูก 1 ครั้ง = 1 โทเค็น (คอมโบต่อเนื่องได้มากกว่า)</p>
       <div class="target-select" id="target-select"></div>
       <div class="item-buttons">
-        <button id="btn-item-swap" class="item-btn swap"></button>
-        <button id="btn-item-freeze" class="item-btn freeze"></button>
-        <button id="btn-item-peek" class="item-btn peek"></button>
+        <div class="item-slot">
+          <button id="btn-item-swap" class="item-btn swap"></button>
+          <div class="item-cooldown-bar"><div id="cooldown-fill-swap" class="item-cooldown-fill"></div></div>
+          <span id="cooldown-label-swap" class="item-cooldown-label"></span>
+        </div>
+        <div class="item-slot">
+          <button id="btn-item-freeze" class="item-btn freeze"></button>
+          <div class="item-cooldown-bar"><div id="cooldown-fill-freeze" class="item-cooldown-fill"></div></div>
+          <span id="cooldown-label-freeze" class="item-cooldown-label"></span>
+        </div>
+        <div class="item-slot">
+          <button id="btn-item-peek" class="item-btn peek"></button>
+          <div class="item-cooldown-bar"><div id="cooldown-fill-peek" class="item-cooldown-fill"></div></div>
+          <span id="cooldown-label-peek" class="item-cooldown-label"></span>
+        </div>
       </div>
-      <div class="cooldown-bar"><div id="cooldown-fill"></div></div>
-      <p id="item-status" class="small-note">พร้อมใช้งาน</p>
     </div>
   </div>
 </section>

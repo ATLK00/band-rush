@@ -949,6 +949,12 @@ label.field-label {
   gap: 8px;
 }
 
+.item-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .item-btn {
   border-radius: var(--radius-md);
   border: 2px solid rgba(255, 255, 255, 0.4);
@@ -1012,18 +1018,29 @@ label.field-label {
   display: block;
 }
 
-.cooldown-bar {
-  height: 8px;
-  border-radius: 4px;
+.item-slot .item-btn {
+  width: 100%;
+}
+
+.item-cooldown-bar {
+  height: 6px;
+  border-radius: 3px;
   background: rgba(0, 0, 0, 0.08);
   overflow: hidden;
 }
 
-.cooldown-bar > div {
+.item-cooldown-fill {
   height: 100%;
   background: var(--accent);
   width: 0%;
   transition: width 0.2s linear;
+}
+
+.item-cooldown-label {
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+  text-align: center;
+  min-height: 1em;
 }
 
 .target-select {

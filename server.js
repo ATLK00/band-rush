@@ -212,7 +212,13 @@ function publicTeams(room) {
     // clock ran behind the server's.
     frozenMsLeft: Math.max(0, t.frozenUntil - now),
     wrongLockMsLeft: Math.max(0, t.wrongLockUntil - now),
-    itemCooldownMsLeft: Math.max(0, t.itemCooldownUntil - now),
+    // Sent as per-item "ms remaining right now" — same server-clock-relative
+    // approach as frozenMsLeft/wrongLockMsLeft above (see note there).
+    itemCooldownsMsLeft: {
+      swap: Math.max(0, t.itemCooldowns.swap - now),
+      freeze: Math.max(0, t.itemCooldowns.freeze - now),
+      peek: Math.max(0, t.itemCooldowns.peek - now),
+    },
     finishedAt: t.finishedAt,
   }));
 }
@@ -265,7 +271,7 @@ function createRoom(settings) {
     finishedAt: null,
     frozenUntil: 0,
     wrongLockUntil: 0,
-    itemCooldownUntil: 0,
+    itemCooldowns: { swap: 0, freeze: 0, peek: 0 },
   }));
 
   const room = {
@@ -751,7 +757,7 @@ io.on("connection", (socket) => {
       return cb && cb({ ok: false, error: "ไอเทมไม่ถูกต้อง" });
     }
     const now = Date.now();
-    if (now < team.itemCooldownUntil) {
+    if (now < team.itemCooldowns[itemType]) {
       return cb && cb({ ok: false, error: "กดเร็วไป รอสักครู่" });
     }
     const cost = ITEM_COSTS[itemType];
@@ -767,10 +773,12 @@ io.on("connection", (socket) => {
       }
     }
 
-    // All checks passed — spend the resources.
+    // All checks passed — spend the resources. Cooldown is tracked
+    // per-item-type now, so using "peek" (30s) does NOT block "swap" or
+    // "freeze" (10s each) — only this item's own gate is set.
     const cooldownMs = ITEM_COOLDOWNS[itemType];
     team.tokens -= cost;
-    team.itemCooldownUntil = now + cooldownMs;
+    team.itemCooldowns[itemType] = now + cooldownMs;
     team.itemsUsedCount += 1;
 
     if (itemType === "swap") {

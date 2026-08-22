@@ -114,19 +114,19 @@ card's identity by inspecting network traffic.
 ## 6. Item logic — swap, freeze, and peek (Role 3 — คนใช้ไอเทม)
 
 Only the player with `role === 'item'` (or `'solo'`, in a one-person team) may
-call `client:useItem`. Each item type has its own **cooldown** (`ITEM_COOLDOWNS`
-in `server.js`), all guarded by the same `team.itemCooldownUntil` timestamp —
-whichever item was used most recently sets the team's cooldown to that item's
-duration. The client shows a countdown bar for all three buttons together, but
-the source of truth is always the server timestamp check:
+call `client:useItem`. Each item type has its own **independent cooldown**
+(`ITEM_COOLDOWNS` in `server.js`, tracked per-item in `team.itemCooldowns`) —
+using "ส่องไพ่" does **not** lock out "สลับ" or "แช่แข็ง", and vice versa. Each
+item button shows its own countdown bar/label client-side, but the source of
+truth is always the server timestamp check:
 
 - สลับตำแหน่งไพ่ (swap): **10s** cooldown
 - แช่แข็ง (freeze): **10s** cooldown
 - ส่องไพ่ (peek): **30s** cooldown
 
-On reconnect (`client:rejoin`), the server also sends `itemCooldownMsLeft` so a
-refreshed client restores the countdown bar instead of showing the buttons as
-falsely ready.
+On reconnect (`client:rejoin`), the server also sends `itemCooldownsMsLeft`
+(one value per item) so a refreshed client restores each button's own
+countdown bar instead of showing it as falsely ready.
 
 - **สลับตำแหน่งไพ่ทีมอื่น (swap):** targets the opposing team's own board.
   1. If the target has at least one already-**matched** pair, the server picks

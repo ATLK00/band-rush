@@ -268,12 +268,15 @@ function attemptRejoin() {
       document.getElementById("item-panel").classList.toggle("hidden", !canUseItem);
       setupItemButtons();
       if (canUseItem) renderTargetChips();
-      // Item cooldowns can now run up to 30s (peek) — restore any cooldown
-      // still in progress so the buttons don't look falsely "ready" right
-      // after a refresh/reconnect (the server would reject the click
-      // anyway, but the button showing enabled is confusing).
-      if (myTeam && myTeam.itemCooldownMsLeft > 0) {
-        startCooldownUI(Date.now() + myTeam.itemCooldownMsLeft);
+      // Item cooldowns run independently per item (up to 30s for peek) —
+      // restore any still in progress so the buttons don't look falsely
+      // "ready" right after a refresh/reconnect (the server would reject
+      // the click anyway, but the button showing enabled is confusing).
+      if (myTeam && myTeam.itemCooldownsMsLeft) {
+        ["swap", "freeze", "peek"].forEach((type) => {
+          const msLeft = myTeam.itemCooldownsMsLeft[type];
+          if (msLeft > 0) startItemCooldown(type, msLeft);
+        });
       }
       lastLockedRender = isBoardLocked();
       renderBoard();
@@ -693,6 +696,13 @@ function renderTargetChips() {
     });
 }
 
+// Cooldowns are tracked per item type now — using "peek" (30s) does NOT
+// lock "swap" or "freeze" (10s each), so each button animates its own bar
+// and label independently instead of sharing one cooldown gate.
+const itemCooldownUntil = { swap: 0, freeze: 0, peek: 0 }; // client-clock deadline per item
+const itemCooldownTotal = { swap: 1, freeze: 1, peek: 1 }; // duration used to compute bar %
+let cooldownTickRunning = false;
+
 function setupItemButtons() {
   document.getElementById("btn-item-swap").innerHTML =
     iconHtml("swap") + `<span>${ITEM_LABELS.swap}</span><span class="cost-tag">${ITEM_COSTS.swap} โทเค็น</span>`;
@@ -704,10 +714,11 @@ function setupItemButtons() {
 }
 
 function refreshItemButtonAvailability() {
-  const cooling = document.getElementById("btn-item-swap").dataset.cooling === "1";
+  const now = Date.now();
   ["swap", "freeze", "peek"].forEach((type) => {
     const btn = document.getElementById(`btn-item-${type}`);
     if (!btn) return;
+    const cooling = itemCooldownUntil[type] > now;
     btn.disabled = cooling || state.tokens < ITEM_COSTS[type];
   });
 }
@@ -727,32 +738,47 @@ function useItem(itemType) {
       state.tokens = res.tokens;
       updateTokenUI();
     }
-    startCooldownUI(Date.now() + (res.cooldownMs || 0));
+    startItemCooldown(itemType, res.cooldownMs || 0);
   });
 }
 document.getElementById("btn-item-swap").addEventListener("click", () => useItem("swap"));
 document.getElementById("btn-item-freeze").addEventListener("click", () => useItem("freeze"));
 document.getElementById("btn-item-peek").addEventListener("click", () => useItem("peek"));
 
-function startCooldownUI(until) {
-  const fill = document.getElementById("cooldown-fill");
-  const statusEl = document.getElementById("item-status");
-  const total = until - Date.now();
-  ["swap", "freeze", "peek"].forEach((t) => (document.getElementById(`btn-item-${t}`).dataset.cooling = "1"));
+function startItemCooldown(itemType, durationMs) {
+  itemCooldownUntil[itemType] = Date.now() + durationMs;
+  itemCooldownTotal[itemType] = durationMs || 1;
   refreshItemButtonAvailability();
+  ensureCooldownTicking();
+}
+
+function ensureCooldownTicking() {
+  if (cooldownTickRunning) return;
+  cooldownTickRunning = true;
   const tick = () => {
-    const remaining = until - Date.now();
-    if (remaining <= 0) {
-      fill.style.width = "0%";
-      statusEl.textContent = "พร้อมใช้งาน";
-      ["swap", "freeze", "peek"].forEach((t) => (document.getElementById(`btn-item-${t}`).dataset.cooling = "0"));
-      refreshItemButtonAvailability();
-      return;
+    const now = Date.now();
+    let anyActive = false;
+    ["swap", "freeze", "peek"].forEach((type) => {
+      const fill = document.getElementById(`cooldown-fill-${type}`);
+      const label = document.getElementById(`cooldown-label-${type}`);
+      if (!fill || !label) return;
+      const remaining = itemCooldownUntil[type] - now;
+      if (remaining <= 0) {
+        fill.style.width = "0%";
+        label.textContent = "";
+        return;
+      }
+      anyActive = true;
+      const pct = Math.max(0, Math.min(100, (remaining / itemCooldownTotal[type]) * 100));
+      fill.style.width = pct + "%";
+      label.textContent = `${(remaining / 1000).toFixed(1)} วิ`;
+    });
+    refreshItemButtonAvailability();
+    if (anyActive) {
+      requestAnimationFrame(tick);
+    } else {
+      cooldownTickRunning = false;
     }
-    const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
-    fill.style.width = pct + "%";
-    statusEl.textContent = `รอชาร์จ ${(remaining / 1000).toFixed(1)} วิ`;
-    requestAnimationFrame(tick);
   };
   tick();
 }
