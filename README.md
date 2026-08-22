@@ -111,23 +111,40 @@ card's identity by inspecting network traffic.
    re-rendering the board with the 3D flip animation (`transform: rotateY`)
    plus a match/miss sound.
 
-## 6. Item logic — swap & cross-team freeze (Role 3 — คนใช้ไอเทม)
+## 6. Item logic — swap, freeze, and peek (Role 3 — คนใช้ไอเทม)
 
-Only the player with `role === 'item'` on a team may call `client:useItem`.
-The server enforces a **15-second cooldown per team** (`team.itemCooldownUntil`)
-so the button is locked client-side too (a countdown bar) but the source of
-truth is always the server timestamp check.
+Only the player with `role === 'item'` (or `'solo'`, in a one-person team) may
+call `client:useItem`. Each item type has its own **cooldown** (`ITEM_COOLDOWNS`
+in `server.js`), all guarded by the same `team.itemCooldownUntil` timestamp —
+whichever item was used most recently sets the team's cooldown to that item's
+duration. The client shows a countdown bar for all three buttons together, but
+the source of truth is always the server timestamp check:
 
-- **สลับตำแหน่งไพ่ทีมอื่น (swap):** the server picks two random *currently
-  hidden* card indexes on the **target team's own board** and swaps their
-  `instrumentId`. Matched or already-revealed cards are never touched. The
-  target team gets `game:cardsSwapped` and simply re-renders — since hidden
-  cards show no face anyway, the "damage" is that any pairs the team had
-  already memorized are now wrong.
-- **แช่แข็งเป้าหมาย 3 วินาที (freeze):** the server sets
-  `targetTeam.frozenUntil = now + 3000` and broadcasts `game:teamFrozen`
-  with that timestamp. Every client checks `teamId === myTeamId`; if it
-  matches, `client.js`:
+- สลับตำแหน่งไพ่ (swap): **10s** cooldown
+- แช่แข็ง (freeze): **10s** cooldown
+- ส่องไพ่ (peek): **30s** cooldown
+
+On reconnect (`client:rejoin`), the server also sends `itemCooldownMsLeft` so a
+refreshed client restores the countdown bar instead of showing the buttons as
+falsely ready.
+
+- **สลับตำแหน่งไพ่ทีมอื่น (swap):** targets the opposing team's own board.
+  1. If the target has at least one already-**matched** pair, the server picks
+     one solved pair and flips it back to `hidden` (`matchedPairs--`, and
+     un-finishes the team if that drops them below the win threshold).
+  2. Otherwise, if the target has a pair currently open mid-vote
+     (`pendingFlip.length === 2`), that pair is snapped back to `hidden` and
+     the pending vote is cancelled (`game:voteCancelled`).
+  3. Either way (or if neither applies), **every currently hidden card** on
+     the target's board has its `instrumentId` reshuffled — always within the
+     same `kind` (name↔name, category↔category) so the board stays solvable
+     and no visible duplicate names/categories can appear.
+  The target team gets `game:cardsSwapped` (with a `catchType` of
+  `"unmatched" | "interrupted" | "scrambled"`) and simply re-renders.
+- **แช่แข็งเป้าหมาย (freeze):** the server sets
+  `targetTeam.frozenUntil = now + FREEZE_DURATION_MS` (5s) and broadcasts
+  `game:teamFrozen` with that timestamp. Every client checks
+  `teamId === myTeamId`; if it matches, `client.js`:
   1. Sets a local `state.frozen = true` flag (the **opener's** `flipCard`
      clicks are ignored client-side *and* rejected server-side via the same
      `Date.now() < team.frozenUntil` check — so a fast clicker can't beat
@@ -136,12 +153,17 @@ truth is always the server timestamp check.
      images at randomized horizontal positions along the bottom edge and
      animates them flying upward off-screen (`@keyframes freeze-fly`) with
      randomized delay/duration so they don't move in unison — fully
-     blocking the board for the 3-second duration.
+     blocking the board for the 5-second duration.
   3. After the duration elapses, the lock and blur filter are removed and
      the board re-renders normally.
+- **ส่องไพ่ (peek):** a self-only item — no target team needed. The server
+  reveals every currently-hidden card on the **user's own** board (skipping
+  any card mid-vote) via `game:peek` for `PEEK_DURATION_MS` (3s), sent only to
+  that team's room (`` `${pin}:${team.id}` ``). No real card state changes;
+  the client flips the cards back down client-side once the duration elapses.
 
-Because the effect is *driven by a server timestamp* rather than a purely
-client-side timer, a student who refreshes mid-freeze still comes back
+Because the freeze effect is *driven by a server timestamp* rather than a
+purely client-side timer, a student who refreshes mid-freeze still comes back
 frozen until the real deadline (the next `game:boardUpdate`/state sync
 respects `frozenUntil`).
 

@@ -268,6 +268,13 @@ function attemptRejoin() {
       document.getElementById("item-panel").classList.toggle("hidden", !canUseItem);
       setupItemButtons();
       if (canUseItem) renderTargetChips();
+      // Item cooldowns can now run up to 30s (peek) — restore any cooldown
+      // still in progress so the buttons don't look falsely "ready" right
+      // after a refresh/reconnect (the server would reject the click
+      // anyway, but the button showing enabled is confusing).
+      if (myTeam && myTeam.itemCooldownMsLeft > 0) {
+        startCooldownUI(Date.now() + myTeam.itemCooldownMsLeft);
+      }
       lastLockedRender = isBoardLocked();
       renderBoard();
       updateProgress();

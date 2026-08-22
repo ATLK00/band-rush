@@ -74,7 +74,7 @@ const TEAM_COLORS = [
   "#C780FA", "#5CE1E6", "#FF8FA3", "#FFD93D",
 ];
 
-const ITEM_COOLDOWN_MS = 5000; // short anti-double-click cooldown
+const ITEM_COOLDOWNS = { swap: 10000, freeze: 10000, peek: 30000 }; // per-item cooldown after use
 const FREEZE_DURATION_MS = 5000;
 const PEEK_DURATION_MS = 3000;
 const WRONG_MATCH_LOCK_MS = 2500; // penalty: opener can't flip right after a wrong guess
@@ -768,8 +768,9 @@ io.on("connection", (socket) => {
     }
 
     // All checks passed — spend the resources.
+    const cooldownMs = ITEM_COOLDOWNS[itemType];
     team.tokens -= cost;
-    team.itemCooldownUntil = now + ITEM_COOLDOWN_MS;
+    team.itemCooldownUntil = now + cooldownMs;
     team.itemsUsedCount += 1;
 
     if (itemType === "swap") {
@@ -888,10 +889,10 @@ io.on("connection", (socket) => {
       fromTeam: team.id,
       itemType,
       targetTeamId: targetTeam ? targetTeam.id : team.id,
-      cooldownMs: ITEM_COOLDOWN_MS,
+      cooldownMs,
       tokens: team.tokens,
     });
-    cb && cb({ ok: true, cooldownMs: ITEM_COOLDOWN_MS, tokens: team.tokens });
+    cb && cb({ ok: true, cooldownMs, tokens: team.tokens });
   });
 
   socket.on("disconnect", () => {

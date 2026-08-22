@@ -48,6 +48,19 @@ function initDvdLayer() {
   if (!layer) return;
   layer.innerHTML = "";
 
+  const size = 100;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  // Spread starting positions across a grid instead of pure independent
+  // Math.random() x/y — with only 11 faces, fully independent random
+  // placement has a real chance of dropping several of them in the same
+  // corner of the screen to start with.
+  const cols = Math.ceil(Math.sqrt(FACE_FILES.length));
+  const rows = Math.ceil(FACE_FILES.length / cols);
+  const cellW = Math.max(size, w / cols);
+  const cellH = Math.max(size, h / rows);
+
   const sprites = FACE_FILES.map((file, i) => {
     const img = document.createElement("img");
     img.src = FACE_DIR + file;
@@ -56,15 +69,26 @@ function initDvdLayer() {
     img.style.filter = faceGlow(FACE_COLORS[i % FACE_COLORS.length]);
     layer.appendChild(img);
 
-    const size = 100;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cellX = col * cellW;
+    const cellY = row * cellH;
+    const x = Math.min(w - size, cellX + Math.random() * Math.max(0, cellW - size));
+    const y = Math.min(h - size, cellY + Math.random() * Math.max(0, cellH - size));
+
     // Slow, lazy drift — noticeably gentler than a real screensaver so it
-    // stays a calm background detail instead of a distraction.
+    // stays a calm background detail instead of a distraction. Angle is
+    // randomized as a single vector (rather than independent vx/vy signs)
+    // so directions are spread evenly instead of clustering toward the
+    // diagonals.
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 0.18 + 0.1;
     const state = {
       el: img,
-      x: Math.random() * (window.innerWidth - size),
-      y: Math.random() * (window.innerHeight - size),
-      vx: (Math.random() * 0.18 + 0.1) * (Math.random() < 0.5 ? -1 : 1),
-      vy: (Math.random() * 0.18 + 0.1) * (Math.random() < 0.5 ? -1 : 1),
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
       size,
     };
     return state;
@@ -73,7 +97,43 @@ function initDvdLayer() {
   function tick() {
     const w = window.innerWidth;
     const h = window.innerHeight;
+
+    // Gentle mutual repulsion: pure wall-bounce physics never separates
+    // two faces that happen to share a near-identical direction and
+    // speed (likely by chance with only 11 sprites) — they'd otherwise
+    // drift and bounce in lockstep forever, reading as a permanent
+    // "clump" instead of faces spread across the screen. Nudge overlapping
+    // faces apart a little every frame instead.
+    for (let i = 0; i < sprites.length; i++) {
+      for (let j = i + 1; j < sprites.length; j++) {
+        const a = sprites[i];
+        const b = sprites[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dist = Math.hypot(dx, dy) || 0.001;
+        const minDist = a.size * 0.85;
+        if (dist < minDist) {
+          const push = ((minDist - dist) / minDist) * 0.06;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          a.vx += nx * push;
+          a.vy += ny * push;
+          b.vx -= nx * push;
+          b.vy -= ny * push;
+        }
+      }
+    }
+
     sprites.forEach((s) => {
+      // Clamp speed so repulsion nudges can't build up into runaway
+      // acceleration — keeps everything at the same calm ambient pace.
+      const speed = Math.hypot(s.vx, s.vy);
+      const maxSpeed = 0.3;
+      if (speed > maxSpeed) {
+        s.vx = (s.vx / speed) * maxSpeed;
+        s.vy = (s.vy / speed) * maxSpeed;
+      }
+
       s.x += s.vx;
       s.y += s.vy;
       if (s.x <= 0 || s.x >= w - s.size) s.vx *= -1;
