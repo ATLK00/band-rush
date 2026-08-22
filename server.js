@@ -773,60 +773,84 @@ io.on("connection", (socket) => {
     team.itemsUsedCount += 1;
 
     if (itemType === "swap") {
-      if (targetTeam.pendingFlip.length === 2) {
+      // Preferred target: take back ONE of the opponent's already-solved
+      // pairs (visibly punishing real progress, not just a glimpse), then
+      // ALWAYS scramble every face-down card on their board afterward —
+      // not just two — so the swap meaningfully resets what they've
+      // learned about the hidden cards. If they have no solved pair yet,
+      // fall back to interrupting a mid-reveal pair; if neither applies,
+      // just scramble the hidden cards.
+      const matchedIdx = targetTeam.board
+        .map((c, i) => (c.state === "matched" ? i : -1))
+        .filter((i) => i !== -1);
+
+      let catchType;
+      if (matchedIdx.length >= 2) {
+        // Pick one solved pair to close back up. Prefer one name-card +
+        // one category-card (an actual matched pair as the player sees
+        // it); fall back to any two matched cards if that's not possible.
+        const nameMatched = matchedIdx.filter((i) => targetTeam.board[i].kind === "name");
+        const catMatched = matchedIdx.filter((i) => targetTeam.board[i].kind === "category");
+        let i1, i2;
+        if (nameMatched.length > 0 && catMatched.length > 0) {
+          i1 = nameMatched[Math.floor(Math.random() * nameMatched.length)];
+          i2 = catMatched[Math.floor(Math.random() * catMatched.length)];
+        } else {
+          [i1, i2] = shuffle(matchedIdx);
+        }
+        targetTeam.board[i1].state = "hidden";
+        targetTeam.board[i2].state = "hidden";
+        targetTeam.matchedPairs = Math.max(0, targetTeam.matchedPairs - 1);
+        // If taking back this pair drops them below the win threshold,
+        // undo a premature "finished" flag too.
+        if (targetTeam.finishedAt && targetTeam.matchedPairs < room.settings.pairCount) {
+          targetTeam.finishedAt = null;
+        }
+        catchType = "unmatched";
+      } else if (targetTeam.pendingFlip.length === 2) {
         // Catch the opponent mid-reveal: snap their currently-open pair
-        // back face-down AND scramble which instrument sits at each of
-        // those two positions, so their glimpse doesn't even help. Their
-        // pending vote is now invalid — game:voteCancelled tells their
-        // confirmer(s) to close the popup instead of it silently hanging.
+        // back face-down. Their pending vote is now invalid —
+        // game:voteCancelled tells their confirmer(s) to close the popup
+        // instead of it silently hanging.
         const [i1, i2] = targetTeam.pendingFlip;
-        const c1 = targetTeam.board[i1];
-        const c2 = targetTeam.board[i2];
-        c1.state = "hidden";
-        c2.state = "hidden";
-        const tmp = c1.instrumentId;
-        c1.instrumentId = c2.instrumentId;
-        c2.instrumentId = tmp;
+        targetTeam.board[i1].state = "hidden";
+        targetTeam.board[i2].state = "hidden";
         targetTeam.pendingFlip = [];
         targetTeam.votes = {};
         io.to(pin).emit("game:voteCancelled", { teamId: targetTeam.id });
-        io.to(pin).emit("game:cardsSwapped", {
-          teamId: targetTeam.id,
-          fromTeam: team.id,
-          board: sanitizeBoard(targetTeam),
-          catchType: "interrupted",
-        });
+        catchType = "interrupted";
       } else {
-        // Nothing open to catch — fall back to scrambling two random
-        // hidden cards instead.
-        // IMPORTANT: only swap within the same `kind` (name<->name or
-        // category<->category). Swapping across kinds used to let a "name"
-        // card and a "category" card trade instrumentId — which could leave
-        // two cards showing the exact same instrument name (a visible dupe)
-        // and unbalance how many of each family exist among name-cards vs
-        // category-cards, occasionally making the board unsolvable. A
-        // same-kind swap is a pure permutation, so the set of names on the
-        // board and the set of categories on the board never changes —
-        // it just scrambles which specific card shows which one.
-        const hiddenByKind = { name: [], category: [] };
-        targetTeam.board.forEach((c, i) => {
-          if (c.state === "hidden") hiddenByKind[c.kind].push(i);
-        });
-        const swappableKinds = ["name", "category"].filter((k) => hiddenByKind[k].length >= 2);
-        if (swappableKinds.length > 0) {
-          const kind = swappableKinds[Math.floor(Math.random() * swappableKinds.length)];
-          const [a, b] = shuffle(hiddenByKind[kind]);
-          const tmp = targetTeam.board[a].instrumentId;
-          targetTeam.board[a].instrumentId = targetTeam.board[b].instrumentId;
-          targetTeam.board[b].instrumentId = tmp;
-        }
-        io.to(pin).emit("game:cardsSwapped", {
-          teamId: targetTeam.id,
-          fromTeam: team.id,
-          board: sanitizeBoard(targetTeam),
-          catchType: "scrambled",
-        });
+        catchType = "scrambled";
       }
+
+      // Now scramble EVERY currently face-down card on the target board.
+      // IMPORTANT: only swap within the same `kind` (name<->name or
+      // category<->category). Swapping across kinds used to let a "name"
+      // card and a "category" card trade instrumentId — which could leave
+      // two cards showing the exact same instrument name (a visible dupe)
+      // and unbalance how many of each family exist among name-cards vs
+      // category-cards, occasionally making the board unsolvable. A
+      // same-kind shuffle is a pure permutation, so the set of names on
+      // the board and the set of categories on the board never changes —
+      // it just scrambles which specific card shows which one.
+      const hiddenByKind = { name: [], category: [] };
+      targetTeam.board.forEach((c, i) => {
+        if (c.state === "hidden") hiddenByKind[c.kind].push(i);
+      });
+      ["name", "category"].forEach((kind) => {
+        const idxs = hiddenByKind[kind];
+        const shuffledIds = shuffle(idxs.map((i) => targetTeam.board[i].instrumentId));
+        idxs.forEach((i, n) => {
+          targetTeam.board[i].instrumentId = shuffledIds[n];
+        });
+      });
+
+      io.to(pin).emit("game:cardsSwapped", {
+        teamId: targetTeam.id,
+        fromTeam: team.id,
+        board: sanitizeBoard(targetTeam),
+        catchType,
+      });
     } else if (itemType === "freeze") {
       targetTeam.frozenUntil = now + FREEZE_DURATION_MS;
       io.to(pin).emit("game:teamFrozen", {
@@ -836,27 +860,28 @@ io.on("connection", (socket) => {
         durationMs: FREEZE_DURATION_MS,
       });
     } else if (itemType === "peek") {
-      // Self-help item: briefly reveal exactly ONE random hidden card (not
-      // the whole board — revealing everything at once both trivializes
-      // the round and causes a jarring "every card flips at once" visual
-      // glitch). Doesn't change any real card state.
+      // Self-help item: briefly reveal the WHOLE board (every face-down
+      // card) for a few seconds, then let the client flip them back down.
+      // Doesn't change any real card state.
       const hiddenIdx = team.board
         .map((c, i) => (c.state === "hidden" && !team.pendingFlip.includes(i) ? i : -1))
         .filter((i) => i !== -1);
-      if (hiddenIdx.length > 0) {
-        const pickIdx = hiddenIdx[Math.floor(Math.random() * hiddenIdx.length)];
-        const card = team.board[pickIdx];
+      const cards = hiddenIdx.map((i) => {
+        const card = team.board[i];
         const inst = INSTRUMENT_BY_ID[card.instrumentId];
-        io.to(`${pin}:${team.id}`).emit("game:peek", {
-          teamId: team.id,
-          durationMs: PEEK_DURATION_MS,
-          cardIndex: pickIdx,
+        return {
+          cardIndex: i,
           instrumentId: card.instrumentId,
           kind: card.kind,
           name: inst ? inst.th : null,
           category: inst ? inst.category : null,
-        });
-      }
+        };
+      });
+      io.to(`${pin}:${team.id}`).emit("game:peek", {
+        teamId: team.id,
+        durationMs: PEEK_DURATION_MS,
+        cards,
+      });
     }
 
     io.to(pin).emit("game:itemUsed", {

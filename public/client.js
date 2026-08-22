@@ -772,18 +772,20 @@ socket.on("game:itemUsed", ({ fromTeam, itemType, targetTeamId }) => {
   }
 });
 
-// ---------------- Peek (self item — reveals exactly ONE hidden card) ----------------
-socket.on("game:peek", ({ teamId, cardIndex, instrumentId, kind, name, category, durationMs }) => {
+// ---------------- Peek (self item — reveals the whole board briefly) ----------------
+socket.on("game:peek", ({ teamId, cards, durationMs }) => {
   if (teamId !== state.teamId) return;
   toast("ส่องไพ่! จำตำแหน่งไว้ให้ดี");
   SFX.item();
   const board = document.getElementById("board");
-  const el = board.children[cardIndex];
-  const realCard = state.board[cardIndex];
-  if (!el || !realCard || realCard.state !== "hidden") return;
-  el.classList.add("flipped", "peek");
-  const c = cardContent({ instrumentId, kind, name, category });
-  el.querySelector(".card-front").innerHTML = `${iconWrapHtml(c)}<div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+  (cards || []).forEach(({ cardIndex, instrumentId, kind, name, category }) => {
+    const el = board.children[cardIndex];
+    const realCard = state.board[cardIndex];
+    if (!el || !realCard || realCard.state !== "hidden") return;
+    el.classList.add("flipped", "peek");
+    const c = cardContent({ instrumentId, kind, name, category });
+    el.querySelector(".card-front").innerHTML = `${iconWrapHtml(c)}<div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+  });
   setTimeout(renderBoard, durationMs);
 });
 
