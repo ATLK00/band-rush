@@ -65,6 +65,7 @@ const CATEGORY_META = {
   percussion: {
     label: "เครื่องกระทบ",
     color: "#FF6B9D",
+    dark: "#C23C68",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <ellipse cx="24" cy="13" rx="16" ry="7"/>
       <path d="M8 13 V30 C8 38 40 38 40 30 V13"/>
@@ -73,6 +74,7 @@ const CATEGORY_META = {
   strings: {
     label: "เครื่องสาย",
     color: "#4D96FF",
+    dark: "#2C6BCF",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 6 C24 2 30 6 30 6 L30 20 C36 26 33 34 27 36 C21 39 14 33 15 26 C16 20 18 20 18 20 Z"/>
       <line x1="24" y1="6" x2="24" y2="40"/>
@@ -81,6 +83,7 @@ const CATEGORY_META = {
   brass: {
     label: "เครื่องเป่าลมทองเหลือง",
     color: "#FFB84C",
+    dark: "#D98F1E",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <path d="M8 20 H28 L40 34 C30 30 18 30 8 30 Z"/>
       <circle cx="8" cy="25" r="4"/>
@@ -89,6 +92,7 @@ const CATEGORY_META = {
   woodwind: {
     label: "เครื่องเป่าลมไม้",
     color: "#6BCB77",
+    dark: "#3FA050",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <rect x="5" y="19" width="38" height="9" rx="4.5"/>
       <circle cx="15" cy="23.5" r="1.6" fill="${c}" stroke="none"/>
@@ -99,6 +103,7 @@ const CATEGORY_META = {
   keyboard: {
     label: "เครื่องลิ่มนิ้ว",
     color: "#C780FA",
+    dark: "#9A4FD9",
     icon: (c) => `<svg viewBox="0 0 48 48" width="1em" height="1em" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <rect x="5" y="13" width="38" height="21" rx="2"/>
       <line x1="16" y1="13" x2="16" y2="27"/><line x1="27" y1="13" x2="27" y2="27"/><line x1="38" y1="13" x2="38" y2="27"/>

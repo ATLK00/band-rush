@@ -16,15 +16,22 @@
 <!-- ============ 0. LOADING (shown until the socket connects) ============ -->
 <section id="screen-loading" class="screen">
   <div class="glass-card center-text">
+    <img class="brand-logo-lg" src="assets/branding/logo.png" alt="จับคู่เครื่องดนตรี"
+      onerror="this.remove(); document.getElementById('loading-title-fallback').style.display='block';" />
+    <h1 id="loading-title-fallback" class="title-xl" style="display:none;">จับคู่เครื่องดนตรี</h1>
     <div class="waiting-pulse"></div>
-    <h1 class="title-xl">จับคู่เครื่องดนตรี</h1>
     <p id="loading-status" class="subtitle">กำลังเชื่อมต่อ...</p>
   </div>
 </section>
 
 <!-- ============ 1. CREATE ROOM ============ -->
 <section id="screen-setup" class="screen hidden">
-  <div class="brand">จับคู่เครื่องดนตรี — หัวห้อง</div>
+  <div class="brand">
+    <img class="brand-logo" src="assets/branding/logo.png" alt="จับคู่เครื่องดนตรี"
+      onerror="this.remove(); document.getElementById('brand-text-host').style.display='inline';" />
+    <span id="brand-text-host" style="display:none;">จับคู่เครื่องดนตรี</span>
+    <span class="brand-suffix">— หัวห้อง</span>
+  </div>
   <div class="glass-card">
     <h1 class="title-xl">ตั้งค่าห้องเกม</h1>
 

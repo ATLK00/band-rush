@@ -445,20 +445,36 @@ function cardContent(card) {
     // Defensive fallback: should never happen, but if a card ever arrives
     // with an unrecognized/missing instrumentId, show a visible marker
     // instead of a blank face so it's obvious something needs a refresh.
-    return { text: "ไม่ทราบ", sub: "-", color: "#999", icon: iconHtml("card", "#999"), photo: false };
+    return { text: "ไม่ทราบ", sub: "-", color: "#999", dark: "#777", icon: iconHtml("card", "#999"), photo: false, badge: false };
   }
-  const meta = CATEGORY_META[card.category] || { label: card.category || "-", color: "#999" };
+  const meta = CATEGORY_META[card.category] || { label: card.category || "-", color: "#999", dark: "#777" };
   if (card.kind === "category") {
-    return { text: meta.label, sub: "ประเภท", color: meta.color, icon: categoryIconHtml(card.category), photo: false };
+    // White icon on a glossy medallion in the category's own color — reads
+    // as a proper "sticker" instead of a bare line icon floating on white.
+    return {
+      text: meta.label,
+      sub: "ประเภท",
+      color: meta.color,
+      dark: meta.dark,
+      icon: categoryIconHtml(card.category, "#ffffff"),
+      photo: false,
+      badge: true,
+    };
   }
-  return { text: card.name || "-", sub: "ชื่อเครื่องดนตรี", color: meta.color, icon: instrumentImgHtml(card.instrumentId), photo: true };
+  return { text: card.name || "-", sub: "ชื่อเครื่องดนตรี", color: meta.color, dark: meta.dark, icon: instrumentImgHtml(card.instrumentId), photo: true, badge: false };
+}
+
+function iconWrapHtml(c) {
+  const cls = c.photo ? " photo" : c.badge ? " category-badge" : "";
+  const style = c.badge ? `--badge-color:${c.color};--badge-dark:${c.dark || c.color}` : `color:${c.color}`;
+  return `<div class="icon-wrap${cls}" style="${style}">${c.icon}</div>`;
 }
 
 function buildCardFace(card) {
   let frontHtml = "";
   if (card.state !== "hidden") {
     const c = cardContent(card);
-    frontHtml = `<div class="icon-wrap${c.photo ? " photo" : ""}" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+    frontHtml = `${iconWrapHtml(c)}<div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
   }
   return frontHtml;
 }
@@ -624,7 +640,9 @@ socket.on("game:voteRequest", ({ teamId, cards }) => {
   pairEl.innerHTML = cards
     .map((c) => {
       const info = cardContent({ instrumentId: c.instrumentId, kind: c.kind, name: c.name, category: c.category });
-      return `<div class="mini-card" style="color:${info.color}"><div class="mini-icon">${info.icon}</div><div class="mini-text">${info.text}</div></div>`;
+      const cls = info.photo ? " photo" : info.badge ? " category-badge" : "";
+      const style = info.badge ? `--badge-color:${info.color};--badge-dark:${info.dark || info.color}` : `color:${info.color}`;
+      return `<div class="mini-card"><div class="mini-icon${cls}" style="${style}">${info.icon}</div><div class="mini-text">${info.text}</div></div>`;
     })
     .join("");
   document.getElementById("vote-progress").textContent = "";
@@ -765,7 +783,7 @@ socket.on("game:peek", ({ teamId, cardIndex, instrumentId, kind, name, category,
   if (!el || !realCard || realCard.state !== "hidden") return;
   el.classList.add("flipped", "peek");
   const c = cardContent({ instrumentId, kind, name, category });
-  el.querySelector(".card-front").innerHTML = `<div class="icon-wrap${c.photo ? " photo" : ""}" style="color:${c.color}">${c.icon}</div><div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
+  el.querySelector(".card-front").innerHTML = `${iconWrapHtml(c)}<div class="card-text">${c.text}</div><div class="label">${c.sub}</div>`;
   setTimeout(renderBoard, durationMs);
 });
 
