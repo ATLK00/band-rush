@@ -794,16 +794,57 @@ io.on("connection", (socket) => {
         .filter((i) => i !== -1);
 
       let catchType;
-      if (matchedIdx.length >= 2) {
-        // Pick one solved pair to close back up. Prefer one name-card +
-        // one category-card (an actual matched pair as the player sees
-        // it); fall back to any two matched cards if that's not possible.
-        const nameMatched = matchedIdx.filter((i) => targetTeam.board[i].kind === "name");
-        const catMatched = matchedIdx.filter((i) => targetTeam.board[i].kind === "category");
+      if (targetTeam.pendingFlip.length === 2) {
+        // Catch the opponent mid-reveal FIRST, before falling back to
+        // reclaiming an old matched pair. This must take priority: by
+        // mid-game almost every team already has >=2 matched pairs, so if
+        // that check ran first it would win every time and "interrupted"
+        // would almost never fire — leaving the opponent's open confirm
+        // popup dangling instead of snapping it face-down like it's
+        // supposed to. Interrupting a live, in-progress decision is more
+        // time-critical than clawing back something already solved.
+        const [i1, i2] = targetTeam.pendingFlip;
+        targetTeam.board[i1].state = "hidden";
+        targetTeam.board[i2].state = "hidden";
+        targetTeam.pendingFlip = [];
+        targetTeam.votes = {};
+        io.to(pin).emit("game:voteCancelled", { teamId: targetTeam.id });
+        catchType = "interrupted";
+      } else if (matchedIdx.length >= 2) {
+        // Preferred target: take back ONE of the opponent's already-solved
+        // pairs (visibly punishing real progress, not just a glimpse), then
+        // ALWAYS scramble every face-down card on their board afterward —
+        // not just two — so the swap meaningfully resets what they've
+        // learned about the hidden cards. If they have no solved pair yet,
+        // fall back to interrupting a mid-reveal pair; if neither applies,
+        // just scramble the hidden cards.
+        // Pick one solved pair to close back up. Must be a genuinely
+        // matching name+category pair — group matched cards by their
+        // instrument category first, then only pick a name-card and a
+        // category-card from a category that has both. Previously this
+        // picked ANY matched name-card and ANY matched category-card at
+        // random, which could grab them from two DIFFERENT solved pairs
+        // (e.g. "ขลุ่ย" from the flute/woodwind pair + the category card
+        // from an unrelated piano/keyboard pair) and re-hide them together
+        // as a pair that was never actually a match.
+        const matchedByCategory = {};
+        matchedIdx.forEach((i) => {
+          const c = targetTeam.board[i];
+          const inst = INSTRUMENT_BY_ID[c.instrumentId];
+          if (!inst) return;
+          if (!matchedByCategory[inst.category]) matchedByCategory[inst.category] = { name: [], category: [] };
+          matchedByCategory[inst.category][c.kind].push(i);
+        });
+        const validCategories = Object.keys(matchedByCategory).filter(
+          (cat) => matchedByCategory[cat].name.length > 0 && matchedByCategory[cat].category.length > 0
+        );
         let i1, i2;
-        if (nameMatched.length > 0 && catMatched.length > 0) {
-          i1 = nameMatched[Math.floor(Math.random() * nameMatched.length)];
-          i2 = catMatched[Math.floor(Math.random() * catMatched.length)];
+        if (validCategories.length > 0) {
+          const cat = validCategories[Math.floor(Math.random() * validCategories.length)];
+          const names = matchedByCategory[cat].name;
+          const cats = matchedByCategory[cat].category;
+          i1 = names[Math.floor(Math.random() * names.length)];
+          i2 = cats[Math.floor(Math.random() * cats.length)];
         } else {
           [i1, i2] = shuffle(matchedIdx);
         }
@@ -816,18 +857,6 @@ io.on("connection", (socket) => {
           targetTeam.finishedAt = null;
         }
         catchType = "unmatched";
-      } else if (targetTeam.pendingFlip.length === 2) {
-        // Catch the opponent mid-reveal: snap their currently-open pair
-        // back face-down. Their pending vote is now invalid —
-        // game:voteCancelled tells their confirmer(s) to close the popup
-        // instead of it silently hanging.
-        const [i1, i2] = targetTeam.pendingFlip;
-        targetTeam.board[i1].state = "hidden";
-        targetTeam.board[i2].state = "hidden";
-        targetTeam.pendingFlip = [];
-        targetTeam.votes = {};
-        io.to(pin).emit("game:voteCancelled", { teamId: targetTeam.id });
-        catchType = "interrupted";
       } else {
         catchType = "scrambled";
       }
