@@ -728,18 +728,9 @@ function useItem(itemType) {
     toast("เลือกทีมเป้าหมายก่อน");
     return;
   }
-  // Optimistic UI: disable the button the instant it's clicked instead of
-  // waiting for the server round-trip. Without this, the button stayed
-  // clickable while the request was in flight — on any real ping that reads
-  // as "lag" (nothing seems to happen) and lets impatient taps fire the
-  // same item multiple times. We re-enable it below if the server says no.
-  const btn = document.getElementById(`btn-item-${itemType}`);
-  if (btn) btn.disabled = true;
-
   socket.emit("client:useItem", { itemType, targetTeamId: selectedTarget }, (res) => {
     if (!res.ok) {
       toast(res.error || "ใช้ไอเทมไม่ได้");
-      refreshItemButtonAvailability(); // restore correct enabled/disabled state
       return;
     }
     SFX.item();
