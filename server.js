@@ -21,7 +21,18 @@ const io = new Server(httpServer, {
   cors: { origin: "*" },
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+// `maxAge` lets browsers cache static assets (images, CSS, JS) instead of
+// re-downloading them on every screen/reload — this is what actually fixes
+// "images load slowly" on repeat visits within a classroom session. Images
+// are versioned by filename only, so a 1-day cache is safe; if you ever
+// replace an image file with new content under the *same* filename, do a
+// hard-refresh (Ctrl/Cmd+Shift+R) to bypass the cache.
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    maxAge: "1d",
+    etag: true,
+  })
+);
 
 // ---------------------------------------------------------------
 // Constants

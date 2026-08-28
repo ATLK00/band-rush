@@ -446,7 +446,7 @@ socket.on("game:started", ({ endsAt, teams }) => {
 function instrumentImgHtml(instrumentId) {
   const src = `assets/instruments/${instrumentId}.png`;
   const fallback = `assets/instruments/_placeholder.png`;
-  return `<img class="instrument-img" src="${src}" alt="" loading="lazy"
+  return `<img class="instrument-img" src="${src}" alt="" loading="lazy" decoding="async"
     onerror="this.onerror=null;this.src='${fallback}';" />`;
 }
 

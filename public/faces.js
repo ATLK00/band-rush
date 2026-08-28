@@ -66,6 +66,7 @@ function initDvdLayer() {
     img.src = FACE_DIR + file;
     img.className = "dvd-face";
     img.alt = "";
+    img.decoding = "async";
     img.style.filter = faceGlow(FACE_COLORS[i % FACE_COLORS.length]);
     layer.appendChild(img);
 
@@ -163,6 +164,7 @@ function playFreezeEffect(durationMs = 3000, message = "ถูกแช่แข
     img.src = FACE_DIR + file;
     img.className = "freeze-face";
     img.alt = "";
+    img.decoding = "async";
     img.style.filter = faceGlow(FACE_COLORS[i % FACE_COLORS.length]);
     const leftPct = Math.random() * 92;
     const delay = Math.random() * 0.5;
