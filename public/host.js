@@ -62,8 +62,18 @@ let hasBooted = false;
 socket.on("connect", () => {
   if (!hasBooted) {
     hasBooted = true;
-    showScreen("screen-setup");
-    attemptHostRejoin();
+    if (localStorage.getItem("mmg_hostPin")) {
+      // A room to reconnect to — stay on screen-loading (don't flash the
+      // "create a new room" screen) until we know whether the rejoin
+      // actually succeeded. Flashing screen-setup here was the bug: on a
+      // slow/flaky reconnect the teacher would see — and sometimes tap —
+      // "create room" before the old room's rejoin had a chance to land,
+      // which really did spin up a brand-new room and abandon the old one.
+      document.getElementById("loading-status").textContent = "กำลังเชื่อมต่อห้องเดิม...";
+      attemptHostRejoin();
+    } else {
+      showScreen("screen-setup");
+    }
   } else {
     // Re-attach this fresh connection to the room the same way a page
     // refresh would, without yanking the teacher back to a loading screen
@@ -119,7 +129,13 @@ function attemptHostRejoin() {
   state.hostToken = getOrCreateHostToken();
   socket.emit("host:rejoin", { pin: savedPin, hostToken: state.hostToken }, (res) => {
     if (!res || !res.ok) {
+      // Genuinely gone (e.g. the server restarted and lost all in-memory
+      // rooms) — not just a slow reconnect. Only now is it correct to
+      // drop back to the create-room screen, and say why so it doesn't
+      // look like the reload silently discarded the old room.
       leaveHostSession();
+      showScreen("screen-setup");
+      toast("ห้องเดิมหาไม่เจอแล้ว (อาจเป็นเพราะเซิร์ฟเวอร์รีสตาร์ท) กรุณาสร้างห้องใหม่");
       return;
     }
     state.pin = savedPin;
