@@ -4,7 +4,13 @@
  * suspenseful ranked reveal of the final results.
  */
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 400,
+  reconnectionDelayMax: 2000,
+  timeout: 10000,
+});
 
 const state = {
   pin: null,
@@ -72,6 +78,40 @@ socket.on("connect_error", () => {
   }
 });
 
+// The teacher's laptop/tablet can silently drop the connection (background
+// tab throttling, sleep) with no visible "disconnect" until well after they
+// switch back — leaving the roster/dashboard stale with no obvious sign.
+// Forcing a resync the moment the tab regains focus closes that gap.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (socket.connected) {
+    attemptHostRejoin();
+  } else {
+    socket.connect();
+  }
+});
+
+setConnBadge("ok");
+socket.on("disconnect", () => setConnBadge("down"));
+socket.on("connect", () => setConnBadge("ok"));
+socket.io.on("reconnect_attempt", () => setConnBadge("retry"));
+
+function setConnBadge(status) {
+  const el = document.getElementById("conn-badge");
+  if (!el) return;
+  el.classList.remove("conn-ok", "conn-down", "conn-retry");
+  if (status === "ok") {
+    el.classList.add("conn-ok");
+    el.textContent = "● เชื่อมต่ออยู่";
+  } else if (status === "retry") {
+    el.classList.add("conn-retry");
+    el.textContent = "● กำลังเชื่อมต่อใหม่...";
+  } else {
+    el.classList.add("conn-down");
+    el.textContent = "● ขาดการเชื่อมต่อ";
+  }
+}
+
 // ---------------- Reconnect after refresh (teacher's own device) ----------------
 function attemptHostRejoin() {
   const savedPin = localStorage.getItem("mmg_hostPin");
@@ -136,21 +176,32 @@ function renderLobby(lobby) {
   state.lastLobby = lobby;
   const grid = document.getElementById("roster-grid");
   grid.innerHTML = "";
+  let totalPlayers = 0;
+  let totalCapacity = 0;
   lobby.teams.forEach((t) => {
+    totalPlayers += t.players.length;
+    totalCapacity += t.maxPerTeam;
     const box = document.createElement("div");
-    box.className = "roster-team";
+    box.className = "roster-team roster-team-enter";
     box.style.borderTopColor = t.color;
     const playersHtml = t.players.length
       ? t.players
           .map(
             (p) =>
-              `<div class="roster-player"><span>${escapeHtml(p.name || "ผู้เล่น")}${p.connected === false ? " (หลุดการเชื่อมต่อ)" : ""}</span><span class="role-tag">${p.role ? ROLE_LABEL[p.role] : "ยังไม่เลือก"}</span></div>`
+              `<div class="roster-player${p.connected === false ? " roster-player-lost" : ""}"><span>${escapeHtml(p.name || "ผู้เล่น")}${p.connected === false ? " (หลุดการเชื่อมต่อ)" : ""}</span><span class="role-tag">${p.role ? ROLE_LABEL[p.role] : "ยังไม่เลือก"}</span></div>`
           )
           .join("")
       : `<p class="small-note">ยังไม่มีผู้เล่น</p>`;
     box.innerHTML = `<h4><span class="team-dot" style="background:${t.color}"></span>${t.name} (${t.players.length}/${t.maxPerTeam})</h4>${playersHtml}`;
     grid.appendChild(box);
   });
+  const summaryEl = document.getElementById("lobby-summary-text");
+  if (summaryEl) {
+    summaryEl.textContent =
+      totalPlayers === 0
+        ? "รอผู้เล่นเข้าห้อง..."
+        : `ผู้เล่นเข้าร่วมแล้ว ${totalPlayers}/${totalCapacity} คน`;
+  }
 }
 
 socket.on("lobby:update", (lobby) => {
@@ -166,6 +217,19 @@ function escapeHtml(s) {
 document.getElementById("btn-start").addEventListener("click", () => {
   socket.emit("host:startGame", { pin: state.pin });
 });
+
+const btnCopyPin = document.getElementById("btn-copy-pin");
+if (btnCopyPin) {
+  btnCopyPin.addEventListener("click", () => {
+    if (!state.pin) return;
+    const done = () => toast("คัดลอกรหัส PIN แล้ว");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(state.pin).then(done).catch(done);
+    } else {
+      done();
+    }
+  });
+}
 
 // ---------------- 4. Spectator dashboard ----------------
 let dashboardTeams = [];

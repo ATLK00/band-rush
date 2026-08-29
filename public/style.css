@@ -1414,3 +1414,133 @@ label.field-label {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ---------------- Connection status badge (host page) ---------------- */
+
+.conn-badge {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 50;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(16, 10, 44, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  letter-spacing: 0.2px;
+  pointer-events: none;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.conn-badge.conn-ok {
+  color: var(--mint);
+  border-color: rgba(78, 230, 176, 0.35);
+}
+
+.conn-badge.conn-retry {
+  color: var(--accent);
+  border-color: rgba(255, 183, 3, 0.4);
+  animation: conn-pulse 1s ease-in-out infinite;
+}
+
+.conn-badge.conn-down {
+  color: var(--danger);
+  border-color: rgba(255, 93, 143, 0.4);
+  animation: conn-pulse 1s ease-in-out infinite;
+}
+
+@keyframes conn-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---------------- PIN copy button + lobby summary (host lobby) ---------------- */
+
+.pin-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.pin-copy-btn {
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.pin-copy-btn:hover {
+  background: var(--glass-strong);
+  transform: translateY(-1px);
+}
+
+.pin-copy-btn:active {
+  transform: translateY(0);
+}
+
+.lobby-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 4px 0 14px;
+}
+
+.lobby-summary-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 8px rgba(78, 230, 176, 0.7);
+  flex: none;
+}
+
+/* Roster cards fade + rise in as students join, instead of just popping
+   into place — makes the live updates read as "live" rather than static. */
+@keyframes roster-team-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.roster-team-enter {
+  animation: roster-team-enter 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+.roster-player-lost {
+  background: rgba(255, 93, 143, 0.16) !important;
+  color: var(--ink) !important;
+}
+
+.hud-icon {
+  margin-right: 6px;
+}
+
+@media (max-width: 400px) {
+  .conn-badge {
+    font-size: 0.62rem;
+    padding: 5px 9px;
+    top: 8px;
+    right: 8px;
+  }
+}

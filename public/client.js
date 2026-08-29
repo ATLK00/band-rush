@@ -15,7 +15,15 @@
  *    cooldown, plus a new self-only "peek" item.
  */
 
-const socket = io();
+const socket = io({
+  // Faster, snappier reconnects on flaky classroom wifi — don't wait a
+  // full default backoff before retrying, and never give up.
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 400,
+  reconnectionDelayMax: 2000,
+  timeout: 10000,
+});
 
 const ITEM_COSTS = { swap: 1, freeze: 2, peek: 1 };
 const ITEM_LABELS = { swap: "สลับตำแหน่งไพ่", freeze: "แช่แข็ง 5 วิ", peek: "ส่องไพ่ 3 วิ" };
@@ -290,6 +298,20 @@ function attemptRejoin() {
     }
   });
 }
+
+// Phones suspend/throttle background tabs — the socket can die silently
+// while the screen is locked or another app is in front, with no visible
+// "disconnect" until well after the student switches back. Forcing a
+// reconnect/resync the moment the tab becomes visible again closes that
+// gap instead of leaving a stale board/lobby on screen.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (socket.connected) {
+    attemptRejoin();
+  } else {
+    socket.connect();
+  }
+});
 
 // ---------------- 1. Join with PIN ----------------
 const pinInput = document.getElementById("input-pin");

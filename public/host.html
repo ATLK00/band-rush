@@ -13,6 +13,7 @@
 <div id="freeze-overlay" class="freeze-overlay hidden"></div>
 <div id="confetti-layer" class="confetti-layer"></div>
 <div id="toast" class="toast"></div>
+<div id="conn-badge" class="conn-badge conn-ok">● เชื่อมต่ออยู่</div>
 
 <!-- ============ 0. LOADING (shown until the socket connects) ============ -->
 <section id="screen-loading" class="screen">
@@ -93,8 +94,15 @@
   <div class="glass-card xwide">
     <div class="pin-display">
       <div class="pin-label">รหัส PIN เข้าห้อง</div>
-      <div class="pin-value" id="lobby-pin">------</div>
+      <div class="pin-value-row">
+        <div class="pin-value" id="lobby-pin">------</div>
+        <button id="btn-copy-pin" class="pin-copy-btn" title="คัดลอกรหัส PIN" aria-label="คัดลอกรหัส PIN">⧉</button>
+      </div>
       <p class="small-note">ให้นักเรียนเข้า URL ของหน้าเว็บผู้เล่น แล้วใส่รหัสนี้</p>
+    </div>
+    <div class="lobby-summary">
+      <span class="lobby-summary-dot"></span>
+      <span id="lobby-summary-text">รอผู้เล่นเข้าห้อง...</span>
     </div>
     <div id="roster-grid" class="roster-grid"></div>
     <div class="row" style="justify-content:center; margin-top:8px;">
@@ -108,7 +116,10 @@
   <button class="back-btn"></button>
   <div class="game-shell">
     <div class="hud">
-      <div class="team-name">แดชบอร์ดหัวห้อง</div>
+      <div class="team-name">
+        <span class="hud-icon">🎧</span>
+        <span>แดชบอร์ดหัวห้อง</span>
+      </div>
       <div class="timer" id="host-timer">05:00</div>
     </div>
     <div id="item-activity" class="item-activity hidden"></div>

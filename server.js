@@ -19,6 +19,14 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: "*" },
+  // Classroom wifi is flaky — a shorter ping interval/timeout means a
+  // dropped student or host is detected in ~13s instead of the default
+  // ~45s, so the "หลุดการเชื่อมต่อ" grace-period countdown (and any
+  // teammate waiting on them) starts sooner instead of the room looking
+  // frozen. The extra ping traffic is tiny (a few bytes each) next to the
+  // image savings above.
+  pingInterval: 8000,
+  pingTimeout: 5000,
 });
 
 // `maxAge` lets browsers cache static assets (images, CSS, JS) instead of
