@@ -3,9 +3,11 @@
  * See README.md for the full socket-flow write-up.
  *
  * New in this revision:
- *  - Reconnect-safe: a per-tab playerId is kept in sessionStorage, so a
- *    refresh (or brief dropped connection) restores your team/role/board
- *    instead of kicking you back to the PIN screen (client:rejoin).
+ *  - Reconnect-safe: a per-device playerId is kept in localStorage, so a
+ *    refresh, a dropped connection, OR accidentally closing the tab/app
+ *    restores your team/role/board instead of kicking you back to the PIN
+ *    screen (client:rejoin) — as long as you reopen the same URL on the
+ *    same device within the reconnect grace period.
  *  - Solo teams now still see the confirm pop-up for their own flips —
  *    they just don't need to wait on anyone else (see getVotingConfirmers
  *    on the server).
@@ -29,10 +31,10 @@ const ITEM_COSTS = { swap: 1, freeze: 2, peek: 1 };
 const ITEM_LABELS = { swap: "สลับตำแหน่งไพ่", freeze: "แช่แข็ง 5 วิ", peek: "ส่องไพ่ 3 วิ" };
 
 function getOrCreatePlayerId() {
-  let id = sessionStorage.getItem("mmg_playerId");
+  let id = localStorage.getItem("mmg_playerId");
   if (!id) {
     id = window.crypto && crypto.randomUUID ? crypto.randomUUID() : "p-" + Math.random().toString(36).slice(2);
-    sessionStorage.setItem("mmg_playerId", id);
+    localStorage.setItem("mmg_playerId", id);
   }
   return id;
 }
@@ -81,7 +83,7 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), 2200);
 }
 function leaveSession() {
-  sessionStorage.removeItem("mmg_pin");
+  localStorage.removeItem("mmg_pin");
 }
 function confirmLeave() {
   if (!confirm("ต้องการออกจากห้องใช่หรือไม่? คุณจะต้องใส่รหัส PIN ใหม่อีกครั้ง")) return;
@@ -234,7 +236,7 @@ socket.on("lobby:update", (lobby) => {
 
 // ---------------- Reconnect after refresh ----------------
 function attemptRejoin() {
-  const savedPin = sessionStorage.getItem("mmg_pin");
+  const savedPin = localStorage.getItem("mmg_pin");
   if (!savedPin) return;
   socket.emit("client:rejoin", { pin: savedPin, playerId: state.playerId }, (res) => {
     if (!res || !res.ok) {
@@ -337,7 +339,7 @@ document.getElementById("btn-join").addEventListener("click", () => {
     }
     state.pin = pin;
     state.teams = res.teams;
-    sessionStorage.setItem("mmg_pin", pin);
+    localStorage.setItem("mmg_pin", pin);
     showScreen("screen-name");
   });
 });

@@ -99,7 +99,7 @@ const ITEM_COOLDOWNS = { swap: 10000, freeze: 10000, peek: 30000 }; // per-item 
 const FREEZE_DURATION_MS = 5000;
 const PEEK_DURATION_MS = 3000;
 const WRONG_MATCH_LOCK_MS = 2500; // penalty: opener can't flip right after a wrong guess
-const RECONNECT_GRACE_MS = 45000; // keep a disconnected player's slot this long
+const RECONNECT_GRACE_MS = 120000; // keep a disconnected player's slot this long
 const ROOM_CLEANUP_DELAY_MS = 10 * 60 * 1000; // sweep finished rooms after 10 min
 
 // Token economy: correct matches earn 1 token; items cost tokens. This
@@ -972,6 +972,17 @@ io.on("connection", (socket) => {
       // period so client:rejoin can restore them seamlessly.
       player.connected = false;
       emitLobbyUpdate(pin);
+
+      // If this player was the last connected confirmer and a pair is
+      // sitting flipped waiting on a vote, the team would otherwise be
+      // stuck forever (no confirmer left to vote, and no timeout ever
+      // resolves it) — same as "nobody available to confirm" at flip
+      // time, so resolve it the same way instead of soft-locking the
+      // board until they manually rejoin.
+      if (room.status === "playing" && team.pendingFlip.length === 2 && getVotingConfirmers(team).length === 0) {
+        resolvePendingFlip(pin, team, true);
+      }
+
       player.disconnectTimer = setTimeout(() => {
         const stillThere = team.players.find((p) => p.playerId === player.playerId);
         if (stillThere && !stillThere.connected) {
