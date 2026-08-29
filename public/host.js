@@ -218,19 +218,6 @@ document.getElementById("btn-start").addEventListener("click", () => {
   socket.emit("host:startGame", { pin: state.pin });
 });
 
-const btnCopyPin = document.getElementById("btn-copy-pin");
-if (btnCopyPin) {
-  btnCopyPin.addEventListener("click", () => {
-    if (!state.pin) return;
-    const done = () => toast("คัดลอกรหัส PIN แล้ว");
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(state.pin).then(done).catch(done);
-    } else {
-      done();
-    }
-  });
-}
-
 // ---------------- 4. Spectator dashboard ----------------
 let dashboardTeams = [];
 

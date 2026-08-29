@@ -91,6 +91,8 @@ const CATEGORY_LABEL = {
 const TEAM_COLORS = [
   "#FF6B9D", "#4D96FF", "#6BCB77", "#FFB84C",
   "#C780FA", "#5CE1E6", "#FF8FA3", "#FFD93D",
+  "#8C7AE6", "#00C2A8", "#FF7F50", "#38A3D1",
+  "#E85D75", "#9ACD32", "#F4A261",
 ];
 
 const ITEM_COOLDOWNS = { swap: 10000, freeze: 10000, peek: 30000 }; // per-item cooldown after use
@@ -265,7 +267,7 @@ function emitLobbyUpdate(pin) {
 
 function createRoom(settings) {
   const pin = genPin();
-  const numTeams = Math.max(2, Math.min(8, settings.numTeams | 0));
+  const numTeams = Math.max(2, Math.min(15, settings.numTeams | 0));
   const maxPerTeam = Math.max(1, Math.min(8, settings.maxPerTeam | 0));
   const gameTimeMinutes = [5, 7, 10].includes(settings.gameTimeMinutes)
     ? settings.gameTimeMinutes

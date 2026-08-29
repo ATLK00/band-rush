@@ -1459,36 +1459,30 @@ label.field-label {
 
 /* ---------------- PIN copy button + lobby summary (host lobby) ---------------- */
 
-.pin-value-row {
+/* ---------------- Compact PIN strip + lobby summary (host lobby) ----------------
+   Kept deliberately small — the roster grid is the important part,
+   especially now that rooms can hold up to 15 teams. */
+
+.pin-display-compact {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 4px 0 2px;
 }
 
-.pin-copy-btn {
-  font-size: 1.1rem;
-  line-height: 1;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--glass-border);
-  background: var(--glass);
-  color: var(--ink);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease, transform 0.15s ease;
+.pin-display-compact .pin-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink-soft);
 }
 
-.pin-copy-btn:hover {
-  background: var(--glass-strong);
-  transform: translateY(-1px);
-}
-
-.pin-copy-btn:active {
-  transform: translateY(0);
+.pin-value-compact {
+  font-size: 1.5rem !important;
+  letter-spacing: 4px !important;
+  font-weight: 800;
+  color: var(--accent);
+  text-shadow: 0 0 14px rgba(255, 183, 3, 0.45);
 }
 
 .lobby-summary {
